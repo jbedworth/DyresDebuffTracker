@@ -22,7 +22,7 @@ announcements from Announce.lua) and MTF's Polymorph bar. WTF keeps Shards,
 Stones, and the Stones/Summon announcements. WTF and MTF step aside later,
 as they did for Dyre's Sounds.
 
-## Status: first release prepared (1.0.0)
+## Status: first release 1.0.1 (1.0.0 reached GitHub only)
 
 - CurseForge project 1777574 (created by John, 2026-10-31). John,
   2026-11-14: "ship it; we have a CF project (#1777574) for DDT". The

@@ -3,7 +3,7 @@
 Copy-ready text for the CurseForge project form. Keep it aligned with what is
 built and tested; do not advertise clients, classes, or features that are not.
 The CurseForge project exists (ID 1777574, John, 2026-10-31). The first
-upload is 1.0.0 (John, 2026-11-14: "ship it"), through CI.
+upload is 1.0.1 (John, 2026-11-14: "ship it", then "Ship as 1.0.1" after 1.0.0's CurseForge job stopped on the token), through CI.
 
 What is tested in game, and what is not (keep the description to this):
 - Tested in game in this AddOn: Hunter's Serpent Sting on WoW: Forever (John,
@@ -99,7 +99,7 @@ Blizzard's frames, Shadowed Unit Frames, BetterBlizzFrames (also with smooth bar
 - **Rogue**: Rupture, Garrote; Sap, Blind.
 - **Shaman**: Flame Shock. **Warrior**: Rend; Intimidating Shout. **Paladin**: Turn Undead, Repentance.
 
-New in 1.0.0 and not yet checked in game: every class spell above but Serpent Sting and the Warlock and Mage spells that Warlock Tools Forever and Mage Tools Forever already track. Tell us what you see.
+New in 1.0.0/1.0.1 and not yet checked in game: every class spell above but Serpent Sting and the Warlock and Mage spells that Warlock Tools Forever and Mage Tools Forever already track. Tell us what you see.
 
 ### With Dyre's Toolkit
 Needs Dyre's Toolkit 2.9.1 or later; the CurseForge app installs it with Dyre's Debuff Tracker. The class tables and the prediction engine are in the toolkit. Frames move with the toolkit's layout mode, and the settings are under Options > AddOns > Dyre's AddOns > Debuff Tracker.

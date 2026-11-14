@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0
+## 1.0.1
 
 ### Features
 
@@ -31,3 +31,10 @@
   to update it.
 - A class Tools AddOn (Warlock Tools Forever, Mage Tools Forever) wins for
   its own class.
+
+## 1.0.0
+
+### Other changes
+
+- Released on GitHub only; its CurseForge upload did not run. 1.0.1 is the
+  same AddOn.
