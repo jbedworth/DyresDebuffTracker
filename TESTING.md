@@ -1,0 +1,94 @@
+# Verification and test plan
+
+How Dyre's Debuff Tracker is checked: the automated suites, and what John
+checks in the client. Mock tests do not prove in-client behavior.
+
+## Automated checks
+
+- `tests/run.lua` (Lua 5.1 mocks), run from this folder:
+  `../WarlockToolsForever/.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua`.
+  It loads Dyre's Toolkit's real files from `../DyresToolkit`, else (CI, or
+  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.9.1 copy in `tests/toolkit`.
+- The release tooling's Python tests: `python -m unittest discover -s tests
+  -p "test_*.py"`, and `python scripts/build_release.py --output dist`.
+- Dyre's Toolkit's own suite (`../DyresToolkit/tests/run.lua`) holds the
+  class data and prediction engine tests: one row per new spell (IDs,
+  durations, tick intervals, flags) and the finisher, late-start, mask,
+  trap, and no-base-damage cases.
+- `luac5.1 -p` on every Lua file.
+
+## In-client checks: the class spells (the class gate, 2026-11-14)
+
+Every spell ID added for Druid, Hunter, Priest, Rogue, Shaman, Warrior,
+Paladin, and Mage's DoTs is copied from a local file (the sources are in
+Dyre's Toolkit's ClassData.lua head) and **not yet checked in client**. Each
+class table's `checks` holds the same list.
+
+For each ID: `/dump C_Spell.GetSpellName(id)` must give the name below, on
+the client named. For a debuff, also read the aura's spell ID on the mob
+(`/ddt debug` lists the slot IDs; the aura's own ID shows in any aura
+tooltip AddOn) and its duration.
+
+### Forever only: IDs and durations with no source
+
+| Class | Spell | IDs | Check |
+| --- | --- | --- | --- |
+| Druid | Lacerate | 414644, 1235826, 1235827 (trainer, G2G-F); 1328616, 1328617, 414647 (WT group; 1328617 is TFB's talent) | Which ID the debuff shows; its duration; its tick interval (3 s assumed). With no tooltip duration, it gets no prediction. |
+| Mage | Frostfire Bolt | 401502, 1237312, 1237313 (G2G-F) | The name; the debuff ID; its duration; its tick interval (3 s assumed); on a hit, `/ddt debug` shows its ticks counting ("tick N of M"), which needs UNIT_COMBAT school 20 (Fire + Frost, from Does It Die). |
+| Hunter | Wyvern Sting | 24335 (G2G-F) | The name; the debuff ID; its duration (12 s on Era). |
+| Rogue | Blind | 2094 | In Good-to-Go's class list, not a trainer spell there: is it learnable, and is the ID the same? |
+| Paladin | Repentance | 20066 | TalentsForeverBook says "moved": the name and its duration. |
+| Mage | Pyroblast | 11366 | TalentsForeverBook says "changed": the debuff ID and duration. |
+| Priest | Devouring Plague | 2944 | A trainer spell at 20 on Forever (WT Camelot); the Undead racial on Era. |
+
+### Debuff IDs assumed the same as Era's
+
+| Class | Spell | IDs (LCD) | Check |
+| --- | --- | --- | --- |
+| Druid | Pounce Bleed | 9007, 9824, 9826 | The bleed's own debuff IDs on Forever. |
+| Hunter | Immolation Trap | 13797, 14298, 14299, 14300, 14301 (the casts are 13795, 14302-14305) | The debuff IDs on Forever. |
+| Paladin | Turn Undead | 2878, 5627, 10326 | Rank 3 is 10326 (G2G-F); LCD lists 5627 twice. |
+
+### Durations
+
+Every new spell's Forever duration is Era's (LibClassicDurations) until
+checked. One rank each is enough when the ranks share a duration:
+
+- Druid: Moonfire 8921 (9 s; 12 s from rank 2), Insect Swarm 5570 (12),
+  Entangling Roots 339 (12, up to 27 at rank 6), Rake 1822 (9), Rip 1079 (12
+  at any combo points), Pounce Bleed (18), Hibernate 2637 (20/30/40).
+- Hunter: Serpent Sting 1978 (15), Immolation Trap (15), Scare Beast 1513
+  (10/15/20), Wyvern Sting (12), Freezing Trap (10/15/20, +15% per Clever
+  Traps rank).
+- Mage: Fireball 133 (4; 143 and 145: 6; later 8), Pyroblast 11366 (12).
+- Priest: Shadow Word: Pain 589 (18, +3 per Improved rank), Devouring
+  Plague 2944 (24), Holy Fire 14914 (10), Shackle Undead 9484 (30/40/50),
+  Psychic Scream (8).
+- Rogue: Rupture 1943 (6 + 2 per combo point), Garrote 703 (18), Sap 6770
+  (25/35/45), Blind 2094 (10).
+- Shaman: Flame Shock 8050 (12).
+- Warrior: Rend 772 (9/12/15/18/21), Intimidating Shout 5246 (8).
+- Paladin: Turn Undead 2878 (10/15/20), Repentance 20066 (6).
+
+### Behavior to see in client
+
+- Each class: the DoT tracker shows its slots, the crowd-control bar shows
+  its bar spells, and the marker spells' macros are written ("! Hibernate",
+  "! Shackle", "! Sap", "! Repentance"). Paladin has no DoT tracker; Shaman
+  has no crowd-control bar; Warrior's bar only announces Intimidating Shout.
+- Prediction: a new DoT shows no damage to come until its first tick on
+  Era (no base damage in the data, lead decision 5a); on Forever, from its
+  tooltip when the tooltip reads, else after a fight's damage meter.
+- Finishers: Rupture's and Rip's damage to come uses the combo points at the
+  cast. On Forever the points may be hidden in combat: then it uses 1
+  point (it errs low). `/ddt debug` says "points N" or "points unknown".
+- Late starts on Forever: Serpent Sting, Fireball, Pyroblast, and Frostfire
+  Bolt keep their DoT after a long flight (not dropped as missed ticks).
+  - Serpent Sting: John, 2026-11-14, Forever, his Hunter: "I can report that
+    DDT is working for Hunter's Serpent Sting". The ID, duration, and
+    prediction amount are not noted as checked one by one.
+- Immolation Trap: on Forever no damage to come from the trap (no mob at
+  the cast); on Era it starts when the trap's debuff lands.
+- On Forever, bleeds (Rake, Rip, Pounce, Lacerate, Rupture, Garrote, Rend)
+  share the physical school with melee swings: watch for a bleed kept after
+  it ended.
