@@ -114,7 +114,40 @@ DDT.PREDICT_COLORS = {
     {key = "green", label = "Green", color = {0.25, 0.9, 0.3}},
 }
 DDT.PANELS = {"target", "focus", "list"}
+-- Each DoT panel's grow direction (John, 2026-11-14: "for each frame
+-- (Target, Focus, Other) ... whether the DoTs should grow up or down from
+-- the origin"): the Toolkit's TRACKER_GROW values, read from dots.grow.
+DDT.GROW = {"down", "up"}
 DDT.CONTROL_SCALE = {min = 50, max = 150, step = 5, default = 100}
+-- "Tracker size" (John, 2026-11-14: "increasing or decreasing by up to 25%"):
+-- one percent for both themes. Bars: the bar width; Compact: the icon size.
+-- The name width and the text scale stay. The Toolkit reads the sizes.
+DDT.TRACKER_SIZE = {min = 75, max = 125, step = 5, default = 100}
+
+-- The percent, repaired: a number, on a step of 5, from 75 to 125.
+function DDT.SanitizeTrackerSize(value)
+    local spec = DDT.TRACKER_SIZE
+    if type(value) ~= "number" or value ~= value then
+        return spec.default
+    end
+    value = math.floor(value / spec.step + 0.5) * spec.step
+    return math.max(spec.min, math.min(spec.max, value))
+end
+
+-- Writes the percent's sizes into dots.sizes, for both themes.
+function DDT.ApplyTrackerSize(dots)
+    local percent = DDT.SanitizeTrackerSize(dots.trackerSize)
+    dots.trackerSize = percent
+    local function Default(theme, key)
+        for _, size in ipairs(DDT.SIZE_SPECS[theme]) do
+            if size.key == key then
+                return size.default
+            end
+        end
+    end
+    dots.sizes.bars.barWidth = math.floor(Default("bars", "barWidth") * percent / 100 + 0.5)
+    dots.sizes.compact.iconSize = math.floor(Default("compact", "iconSize") * percent / 100 + 0.5)
+end
 
 local function Bool(value, default)
     if type(value) == "boolean" then
@@ -218,8 +251,12 @@ function DDT.SanitizeDB(db, classData)
         sections = {}, panelOpacity = {}, onPlates = {}, plateDots = Bool(dots.plateDots, false),
         plateDotsOffset = Whole(dots.plateDotsOffset, 0, 120, 50),
         plateDotsOpacity = Whole(dots.plateDotsOpacity, 10, 100, 100),
+        trackerSize = dots.trackerSize, grow = {},
     }
+    DDT.ApplyTrackerSize(clean)
+    local grow = type(dots.grow) == "table" and dots.grow or {}
     for _, key in ipairs(DDT.PANELS) do
+        clean.grow[key] = Choice(grow[key], DDT.GROW, "down")
         clean.sections[key] = Place(sections[key])
         clean.panelOpacity[key] = Whole(panelOpacity[key], 10, 100, 100)
     end

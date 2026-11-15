@@ -165,7 +165,33 @@ character knows, at its best rank; none for a spell it does not know.
   and Crowd control, each with its own Enable. A page whose kind another
   AddOn has says which one and greys its settings (`DDT.KindStatus`,
   `DDT.Owns`); a class with no table or no data for the kind gets one note.
-- Not built yet: the DoT sizes, panel opacity and colors, DoT order, and
+- Tracker size (John, 2026-11-14: "a 'Tracker size' slider, allowing the
+  length of the dot bar to be adjusted, increasing or decreasing by up to
+  25%"): `db.dots.trackerSize`, a percent from 75 to 125 on steps of 5
+  (`DDT.TRACKER_SIZE`), repaired in SanitizeDB (`DDT.SanitizeTrackerSize`:
+  not a number gives 100, else rounded to a step and clamped). It is the
+  source of `sizes.bars.barWidth` (290 x percent) and
+  `sizes.compact.iconSize` (22 x percent), rounded to whole pixels
+  (`DDT.ApplyTrackerSize`, at every SanitizeDB and slider change); the name
+  width, line height, and text scale stay. The slider ("Tracker size" on
+  the DoTs page, the gold default mark through the Toolkit's
+  `AddDefaultTick`) calls the tracker's `Rebuild`, which the Toolkit runs
+  out of combat (else at PLAYER_REGEN_ENABLED). No Toolkit change.
+- Grow (John, 2026-11-14: "for each frame (Target, Focus, Other) we need
+  to be able to set whether the DoTs should grow up or down from the
+  origin"; "Keep the name above/below setting we already have where it is.
+  The user can chose."): `db.dots.grow` = {target, focus, list}, each
+  "down" (default) or "up" (`DDT.GROW`), repaired in SanitizeDB (anything
+  else is "down"). The Toolkit's DoT tracker reads `store.grow` live
+  (Toolkit 2.9.2, `DyresToolkit.TRACKER_GROW`). Three dropdowns on the
+  DoTs page, "Grow: Target", "Grow: Focus", "Grow: Others", after Tracker
+  size (DDT has no name position setting on its pages; `namePosition` is
+  only saved), each calling the tracker's `Rebuild` (out of combat, else at
+  combat's end). Shown only when `TRACKER_GROW` exists (Toolkit 2.9.1 lacks
+  it); the saved value is kept and repaired either way.
+  `DDT.TOOLKIT_VERSION` stays 2.9.1: the gate hides only the Grow settings
+  on 2.9.1, and the rest works (lead, 2026-11-14, at the 2.9.2 release).
+- Not built yet: the other DoT sizes, panel opacity and colors, DoT order, and
   announcement text editors (the engines read them from the store; the
   defaults are WTF's), and the in-client check.
 
@@ -183,7 +209,7 @@ character knows, at its best rank; none for a spell it does not know.
   and its contract is still 2. An unreadable version is let through.
 - No byte-for-byte copy tests of toolkit files (John, 2026-10-30): the
   suite loads ../DyresToolkit when it is there, else (CI, or
-  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.9.1 in tests/toolkit. The copy
+  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.9.2 in tests/toolkit. The copy
   may lag; refresh it from the Toolkit's release tag when DDT needs newer
   toolkit behavior.
 - Use the toolkit's shared code; never copy it here: `CreateAuraContainer`

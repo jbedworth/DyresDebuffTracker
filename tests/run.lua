@@ -2,7 +2,7 @@
 --   lua5.1 tests/run.lua
 -- It loads Dyre's Toolkit's real files from ../DyresToolkit when that folder
 -- is there; else (as in CI, which has only this repository, or with
--- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.9.1). The
+-- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.9.2). The
 -- copy may lag; the tests check behavior, never that the two match.
 
 if _VERSION ~= "Lua 5.1" then
@@ -462,7 +462,7 @@ test("the saved settings are repaired: bad values give the defaults, good ones s
     equal(db.dots.theme, "bars")
     equal(db.dots.order[1], "siphon", "kept first, once")
     equal(#db.dots.order, 6, "every slot")
-    equal(db.dots.sizes.bars.barWidth, 500)
+    equal(db.dots.sizes.bars.barWidth, 290, "the Tracker size percent sets it (100%)")
     equal(db.dots.sizes.bars.lineHeight, 13)
     equal(db.dots.sizes.compact.iconSize, 22)
     equal(db.dots.healthText, "percent")
@@ -486,6 +486,102 @@ test("the saved settings are repaired: bad values give the defaults, good ones s
     equal(db.control.scale, 50)
     equal(db.macrosOwned["! Fear"], true)
     equal(db.macrosOwned.bad, nil)
+end)
+
+-- John, 2026-11-14: "a 'Tracker size' slider ... increasing or decreasing by up to 25%".
+test("Tracker size: one percent, 75 to 125, sets the bar width and the compact icon size", function()
+    local state = fixture()
+    local db, setting = state.ddt.db, state.settings.DDT_DOTS_TRACKER_SIZE
+    assert(setting, "the slider on the DoTs page")
+    equal(setting.category, "DoTs")
+    equal(setting.default, 100)
+    equal(db.dots.trackerSize, 100)
+    equal(db.dots.sizes.bars.barWidth, 290, "default bar width")
+    equal(db.dots.sizes.compact.iconSize, 22, "default icon size")
+    local list = state.named.DyresDebuffTrackerList
+    equal(list.width, 290, "the Bars list is 290 wide")
+    setting.set(75)
+    equal(db.dots.trackerSize, 75)
+    equal(db.dots.sizes.bars.barWidth, 218)
+    equal(db.dots.sizes.compact.iconSize, 17)
+    equal(list.width, 218, "the tracker follows at once out of combat")
+    setting.set(125)
+    equal(db.dots.sizes.bars.barWidth, 363)
+    equal(db.dots.sizes.compact.iconSize, 28)
+    equal(list.width, 363)
+    equal(db.dots.sizes.compact.nameWidth, 110, "the name width stays")
+    equal(db.dots.sizes.bars.textScale, 100, "the text scale stays")
+    -- A theme switch keeps the percent: Compact's icons are 28 at 125%.
+    state.settings.DDT_DOTS_THEME.set("compact")
+    equal(db.dots.trackerSize, 125)
+    equal(db.dots.sizes.compact.iconSize, 28)
+    state.settings.DDT_DOTS_THEME.set("bars")
+    equal(list.width, 363, "back to Bars, still 125%")
+    -- In combat the rebuild waits for its end.
+    state.combat = true
+    setting.set(90)
+    equal(db.dots.sizes.bars.barWidth, 261, "saved at once")
+    equal(list.width, 363, "no rebuild in combat")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(list.width, 261, "rebuilt when combat ends")
+    setting.set(200)
+    equal(db.dots.trackerSize, 125, "the slider's value is clamped")
+    -- Bad saved values are repaired.
+    for _, case in ipairs({{"big", 100}, {200, 125}, {10, 75}, {0 / 0, 100}, {83, 85}, {112.4, 110}}) do
+        local repaired = fixture({saved = {dots = {trackerSize = case[1]}}}).ddt.db.dots
+        equal(repaired.trackerSize, case[2], "saved " .. tostring(case[1]))
+        equal(repaired.sizes.bars.barWidth, math.floor(290 * case[2] / 100 + 0.5))
+    end
+end)
+
+-- John, 2026-11-14: "for each frame (Target, Focus, Other) ... whether the
+-- DoTs should grow up or down from the origin".
+test("Grow: Down or Up per DoT panel, repaired, rebuilt, and shown only with a Toolkit that has it", function()
+    local realGrow
+    local function WithGrow(state)
+        realGrow = state.toolkit.TRACKER_GROW ~= nil
+        state.toolkit.TRACKER_GROW = state.toolkit.TRACKER_GROW or {"down", "up"}
+    end
+    local state = fixture({before = WithGrow})
+    local db = state.ddt.db
+    for _, key in ipairs({"target", "focus", "list"}) do
+        equal(db.dots.grow[key], "down", key .. " grows down by default")
+        local setting = state.settings["DDT_DOTS_GROW_" .. key:upper()]
+        assert(setting, key .. " has a Grow setting")
+        equal(setting.category, "DoTs")
+        equal(setting.default, "down")
+        equal(setting.get(), "down")
+    end
+    equal(state.settings.DDT_DOTS_GROW_LIST.name, "Grow: Others")
+    local rebuilds, tracker = 0, state.ddt.dotTracker
+    local rebuild = tracker.Rebuild
+    tracker.Rebuild = function(self) rebuilds = rebuilds + 1; return rebuild(self) end
+    state.settings.DDT_DOTS_GROW_TARGET.set("up")
+    equal(db.dots.grow.target, "up")
+    equal(db.dots.grow.focus, "down", "one panel at a time")
+    equal(rebuilds, 1, "a change rebuilds the tracker")
+    state.settings.DDT_DOTS_GROW_FOCUS.set("up")
+    state.settings.DDT_DOTS_GROW_LIST.set("up")
+    equal(db.dots.grow.focus, "up")
+    equal(db.dots.grow.list, "up")
+    equal(rebuilds, 3)
+    if realGrow then
+        -- The Toolkit with the grow change: a list not yet dragged sits above the stack.
+        equal(state.named.DyresDebuffTrackerList.point[1], "BOTTOMLEFT", "the Others list grows up")
+    end
+    -- Bad saved values are repaired; good ones stay.
+    local repaired = fixture({before = WithGrow,
+        saved = {dots = {grow = {target = "up", focus = "sideways", list = 7}}}}).ddt.db.dots.grow
+    equal(repaired.target, "up")
+    equal(repaired.focus, "down")
+    equal(repaired.list, "down")
+    equal(fixture({saved = {dots = {grow = "up"}}}).ddt.db.dots.grow.list, "down", "not a table")
+    -- The gate: a Toolkit without TRACKER_GROW (2.9.1) shows no Grow settings.
+    local old = fixture({before = function(s) s.toolkit.TRACKER_GROW = nil end})
+    equal(old.settings.DDT_DOTS_GROW_TARGET, nil, "no Grow setting without the Toolkit's grow")
+    equal(old.settings.DDT_DOTS_GROW_LIST, nil)
+    equal(old.ddt.db.dots.grow.target, "down", "still saved and repaired")
 end)
 
 test("Toolkit 2.9.1 or later is used; an unreadable version is let through", function()

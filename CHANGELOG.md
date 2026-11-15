@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.1.0
+
+### Features
+
+- Tracker size: a slider on the DoTs page, from 75% to 125% (default
+  100%). It sets the length of the DoT bars in the Bars look and the size
+  of the DoT icons in the Compact look; one setting for both. A change in
+  combat applies when combat ends.
+- Grow: Down or Up for each DoT panel (Target, Focus, and Others), on the
+  DoTs page. Up puts the first DoT where you placed the panel and the next
+  ones above it (Bars look), and the Others list stacks new mobs upward.
+  The name keeps its place. Needs Dyre's Toolkit 2.9.2 or later;
+  with an older one the settings do not show.
+
 ## 1.0.1
 
 ### Features

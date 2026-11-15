@@ -8,7 +8,7 @@ checks in the client. Mock tests do not prove in-client behavior.
 - `tests/run.lua` (Lua 5.1 mocks), run from this folder:
   `../WarlockToolsForever/.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua`.
   It loads Dyre's Toolkit's real files from `../DyresToolkit`, else (CI, or
-  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.9.1 copy in `tests/toolkit`.
+  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.9.2 copy in `tests/toolkit`.
 - The release tooling's Python tests: `python -m unittest discover -s tests
   -p "test_*.py"`, and `python scripts/build_release.py --output dist`.
 - Dyre's Toolkit's own suite (`../DyresToolkit/tests/run.lua`) holds the
@@ -71,6 +71,19 @@ checked. One rank each is enough when the ranks share a duration:
 - Paladin: Turn Undead 2878 (10/15/20), Repentance 20066 (6).
 
 ### Behavior to see in client
+
+- Tracker size (DoTs page): at 75% and 125% the Bars rows are 218 and 363
+  px wide (290 at 100%), and Compact's icons 17 and 28 px (22). The rows
+  follow at once out of combat; a change in combat applies when combat
+  ends, with no error. A theme switch keeps the percent. The slider shows
+  "N%" and the gold default mark at 100%.
+- Grow (DoTs page, needs the Toolkit's grow change): Bars look, place the
+  Target panel just above the target frame, set "Grow: Target" to Up, and
+  DoT your target with two or more DoTs. The first DoT is the lowest line,
+  where the panel was placed; the next ones are above it; the name stays
+  where its position puts it. Down gives the old order again. "Grow:
+  Others" Up: new mobs' rows stack upward. A change in combat applies when
+  combat ends. With Toolkit 2.9.1 the three Grow settings do not show.
 
 - Each class: the DoT tracker shows its slots, the crowd-control bar shows
   its bar spells, and the marker spells' macros are written ("! Hibernate",

@@ -45,6 +45,12 @@ nameplates). Never change or overwrite them. `python scripts/make_artwork.py
 | nameplate-dies.png | era-blackrock-grunt-dies-raw.webp | 1070, 250, 1640, 385 | DIES on the nameplate: RETAKE (see below) |
 | target-frame-dies.png | era-blackrock-grunt-dies-raw.webp | 1490, 880, 2000, 1080 | DIES left of the target frame's bar |
 
+`screenshots/forever-hunter-serpent-sting-tracker.webp` is John's raw
+Forever screenshot (2026-11-14, a level 9 Hunter in combat with a Strigid
+Owl): the tracker row with Serpent Sting's timer bar (6 s), the first
+in-game shot of a class other than Warlock. No DIES shows in it. Never
+change or overwrite it.
+
 `nameplate-dies.png` (and the plate in `overview-dies.png`) shows the badge
 running into Threat Plates' target-of-target text ("DIESJuk'taz ]"), fixed in
 Dyre's Toolkit 2.4.0. Take that shot again with 2.4.0 before using it.

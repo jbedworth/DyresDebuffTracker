@@ -11,6 +11,7 @@ local NO_CLASS = "Dyre's Debuff Tracker has nothing for your class yet: more cla
 local NO_DOTS = "Your class has no DoTs here yet."
 local NO_CONTROL = "Your class has no crowd control here yet."
 local THEMES = {{"compact", "Compact"}, {"bars", "Bars"}}
+local GROW_CHOICES = {{"down", "Down"}, {"up", "Up"}}
 local HEALTH_TEXTS = {{"none", "None"}, {"number", "Number"}, {"percent", "Percent"}, {"both", "Number and percent"}}
 
 local function HasSettingsAPI()
@@ -100,6 +101,35 @@ local function Slider(category, variable, name, table, key, default, low, high, 
     return Settings.CreateSlider(category, setting, options, tooltip)
 end
 
+-- "Tracker size": a percent slider on steps of 5, with the gold default mark.
+local function TrackerSize(category, tooltip, onChange)
+    if type(Settings.CreateSlider) ~= "function" or type(Settings.CreateSliderOptions) ~= "function" then
+        return nil
+    end
+    local spec = DDT.TRACKER_SIZE
+    local setting = Settings.RegisterProxySetting(category, "DDT_DOTS_TRACKER_SIZE", Settings.VarType.Number,
+        "Tracker size", spec.default,
+        function() return DDT.db.dots.trackerSize end,
+        function(value)
+            if type(value) == "number" then
+                DDT.db.dots.trackerSize = DDT.SanitizeTrackerSize(value)
+                DDT.ApplyTrackerSize(DDT.db.dots)
+                onChange()
+            end
+        end)
+    local options = Settings.CreateSliderOptions(spec.min, spec.max, spec.step)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+            return string.format("%d%%", value)
+        end)
+    end
+    local initializer = Settings.CreateSlider(category, setting, options, tooltip)
+    if DDT.toolkit and type(DDT.toolkit.AddDefaultTick) == "function" then
+        DDT.toolkit.AddDefaultTick(initializer, spec)
+    end
+    return initializer
+end
+
 -- The line at the top of a page: who has this kind for your class.
 local function Status(layout, kind, none)
     if not DDT.classData then
@@ -136,6 +166,20 @@ local function DotsPage(parent)
     Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_THEME", "Theme", Dots, "theme", "bars", THEMES,
         "Compact: a row with the name and an icon per DoT. Bars: the name above one bar per DoT.", Rebuilt), "dots"),
         master, On)
+    Nest(OnlyWhenOurs(TrackerSize(category, "Bars: the length of the DoT bars. Compact: the size of the DoT "
+        .. "icons. From 75% to 125%; one setting for both looks. A change in combat applies when combat ends.",
+        Rebuilt), "dots"), master, On)
+    -- Grow direction per panel: only with a Toolkit that has it (TRACKER_GROW).
+    if DDT.toolkit and type(DDT.toolkit.TRACKER_GROW) == "table" then
+        local function Grow() return DDT.db.dots.grow end
+        for _, panel in ipairs({{"target", "Target"}, {"focus", "Focus"}, {"list", "Others"}}) do
+            Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_GROW_" .. panel[1]:upper(), "Grow: " .. panel[2], Grow,
+                panel[1], "down", GROW_CHOICES, "Up puts the first DoT where you placed the panel and the next "
+                    .. "ones above it (Bars look). Down puts them below it." .. (panel[1] == "list"
+                    and " Up also stacks new mobs upward, in both looks." or "")
+                    .. " The name keeps its place.", Rebuilt), "dots"), master, On)
+        end
+    end
     local health = Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_HEALTH", "Show mob health", Dots, "health", false,
         "The line with the mob's name is its health bar, with the damage to come drawn on it.", Rebuilt), "dots"),
         master, On)

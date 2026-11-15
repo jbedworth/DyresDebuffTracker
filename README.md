@@ -13,8 +13,14 @@ Compatibility).
 
 - A row for your target, one for your focus, and rows for the other mobs you
   DoTed. Each row has a timer bar per DoT, in its own color.
-- Two looks: **Compact** and **Bars**. Optional mob health, as a number, a
-  percent, or both.
+- Two looks: **Compact** and **Bars**. **Tracker size** (75% to 125%) sets
+  the length of the bars, or the size of the icons in Compact. Optional mob
+  health, as a number, a percent, or both.
+- **Grow**, per panel (Target, Focus, Others): Down (the default) or Up. Up
+  puts the first DoT where you placed the panel and the next ones above it,
+  for a panel above your target frame; the Others list stacks new mobs
+  upward. It needs a Dyre's Toolkit that has grow directions (2.9.2 or
+  later); with an older one the settings do not show.
 - Optional dots on nameplates: one per DoT, colored while it is up.
 
 ## Damage to come, and DIES
