@@ -56,12 +56,12 @@ Compatibility).
 | --- | --- | --- |
 | Warlock | Your curse, your Bane (Agony, Doom, or Havoc on WoW: Forever; Curse of Agony on Classic Era), Corruption, Immolate, Siphon Life | Fear, Banish; Enslave Demon and Howl of Terror (message only) |
 | Mage | The DoT parts of Fireball, Pyroblast, and Frostfire Bolt | Polymorph |
-| Druid | Moonfire, Insect Swarm, Entangling Roots, Rake, Rip, Pounce, Lacerate | Hibernate, Entangling Roots |
+| Druid | Moonfire, Insect Swarm, Entangling Roots, Rake, Rip, Pounce, Lacerate | Hibernate, Entangling Roots (one bar per mob) |
 | Hunter | Serpent Sting, Immolation Trap | Scare Beast, Wyvern Sting, Freezing Trap (message only) |
 | Priest | Shadow Word: Pain, Devouring Plague, Holy Fire | Shackle Undead, Psychic Scream (message only) |
 | Rogue | Rupture, Garrote | Sap, Blind |
 | Shaman | Flame Shock | none |
-| Warrior | Rend | Intimidating Shout (message only) |
+| Warrior | Rend | Hamstring; Intimidating Shout (message only) |
 | Paladin | none | Turn Undead, Repentance |
 
 **Tested in game:** Hunter's Serpent Sting on WoW: Forever (John,

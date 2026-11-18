@@ -113,7 +113,7 @@ local SPELLS = {[172] = "Corruption", [348] = "Immolate", [980] = "Curse of Agon
     [133] = "Fireball", [11366] = "Pyroblast", [8921] = "Moonfire", [339] = "Entangling Roots",
     [2637] = "Hibernate", [1978] = "Serpent Sting", [1513] = "Scare Beast", [589] = "Shadow Word: Pain",
     [9484] = "Shackle Undead", [1943] = "Rupture", [6770] = "Sap", [2094] = "Blind", [8050] = "Flame Shock",
-    [772] = "Rend", [5246] = "Intimidating Shout", [2878] = "Turn Undead", [20066] = "Repentance"}
+    [772] = "Rend", [5246] = "Intimidating Shout", [1715] = "Hamstring", [2878] = "Turn Undead", [20066] = "Repentance"}
 
 -- The client for one character: its class, its spells, the AddOns loaded.
 local function fixture(options)
@@ -364,6 +364,14 @@ test("a Mage gets the Polymorph bar and macro, the Fireball DoTs, and no Focus b
     equal(state.heading("Your class has no DoTs here yet"), nil)
 end)
 
+-- Whether a class table has a control spell (a Toolkit newer than the copy may).
+local function HasControl(classData, key)
+    for _, def in ipairs(classData and classData.control or {}) do
+        if def.key == key then return true end
+    end
+    return false
+end
+
 -- Every new class (the class gate, lead 2026-11-14): what its table makes.
 -- {class, className, spellbook, dots?, control?, the Focus box key, macros written}
 local CLASS_ROWS = {
@@ -373,7 +381,8 @@ local CLASS_ROWS = {
     {"PRIEST", "Priest", {{589, "Shadow Word: Pain"}, {9484, "Shackle Undead"}}, true, true, nil, {"! Shackle"}},
     {"ROGUE", "Rogue", {{1943, "Rupture"}, {6770, "Sap"}, {2094, "Blind"}}, true, true, "blind", {"! Sap"}},
     {"SHAMAN", "Shaman", {{8050, "Flame Shock"}}, true, false, nil, {}},
-    {"WARRIOR", "Warrior", {{772, "Rend"}, {5246, "Intimidating Shout"}}, true, true, nil, {}},
+    {"WARRIOR", "Warrior", {{772, "Rend"}, {5246, "Intimidating Shout"}, {1715, "Hamstring"}}, true, true,
+        "hamstring", {}},
     {"PALADIN", "Paladin", {{2878, "Turn Undead"}, {20066, "Repentance"}}, false, true, "turnundead",
         {"! Repentance"}},
 }
@@ -397,9 +406,11 @@ test("every new class gets the engines its table has, at priority 5, with its ma
         end
         if row[5] then
             equal(toolkit.KindOwner("control:" .. class), "DyresDebuffTracker", class)
-            local focus = ddt.controlTracker.focusBox
-            equal(focus and focus.key, row[6], class .. " Focus box")
-            equal(state.named.DyresDebuffTrackerControlFocus ~= nil, row[6] ~= nil, class .. " Focus box frame")
+            local focus, want = ddt.controlTracker.focusBox, row[6]
+            -- Hamstring came after the tests/toolkit copy (Toolkit, John 2026-11-17).
+            if want == "hamstring" and not HasControl(ddt.classData, "hamstring") then want = nil end
+            equal(focus and focus.key, want, class .. " Focus box")
+            equal(state.named.DyresDebuffTrackerControlFocus ~= nil, want ~= nil, class .. " Focus box frame")
             for _, spell in ipairs(ddt.classData.control) do
                 assert(state.settings["DDT_ANNOUNCE_" .. spell.key:upper()], class .. " announce " .. spell.key)
                 if spell.marker then
@@ -415,6 +426,46 @@ test("every new class gets the engines its table has, at priority 5, with its ma
             contains(macro.body, "/tm [@", macro.name .. " marks through /tm")
         end
         equal(#state.messages, 0, class .. ": nothing said at login")
+    end
+end)
+
+-- John, 2026-11-17: "add Warrior Hamstring to CC abilities that can be on
+-- more than one mob, as well as Druid roots".
+test("Hamstring and Entangling Roots on two mobs give two crowd-control bars", function()
+    for _, case in ipairs({
+        {"WARRIOR", "Warrior", {{772, "Rend"}, {1715, "Hamstring"}}, 1715, "hamstring"},
+        {"DRUID", "Druid", {{8921, "Moonfire"}, {339, "Entangling Roots"}}, 339, "roots"},
+    }) do
+        local state = fixture({class = case[1], className = case[2], book = case[3]})
+        local env, units = state.env, {}
+        env.UnitExists = function(unit) return units[unit] ~= nil end
+        env.UnitGUID = function(unit) return unit == "player" and "Player-1" or (units[unit] and units[unit].guid) end
+        env.UnitName = function(unit) return units[unit] and units[unit].name end
+        env.UnitCanAttack = function(_, unit) return units[unit] ~= nil end
+        local tracker = state.ddt.controlTracker
+        assert(tracker, case[1] .. " has a control bar")
+        if not HasControl(state.ddt.classData, case[5]) then
+            -- The tests/toolkit copy predates Hamstring; ../DyresToolkit has it.
+            assert(TOOLKIT == "tests/toolkit/", case[5] .. " must be in ../DyresToolkit")
+        else
+            local spell
+            for _, def in ipairs(state.ddt.classData.control) do
+                if def.key == case[5] then spell = def end
+            end
+            assert(spell and spell.bar and not spell.single, case[5] .. ": a bar spell, not single")
+            for index, guid in ipairs({"Creature-1", "Creature-2"}) do
+                units.target = {guid = guid, name = "Boar"}
+                emit(state, "UNIT_SPELLCAST_SENT", "player", "Boar", "cast-" .. index, case[4])
+                emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", "cast-" .. index, case[4])
+            end
+            local held = {}
+            for _, row in ipairs(tracker.rows) do
+                if row.guid then held[#held + 1] = row.guid .. ":" .. tostring(row.key) end
+            end
+            table.sort(held)
+            equal(table.concat(held, ","), "Creature-1:" .. case[5] .. ",Creature-2:" .. case[5],
+                case[1] .. ": one bar per mob")
+        end
     end
 end)
 

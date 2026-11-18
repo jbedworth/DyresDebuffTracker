@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.1.1
+
+### Features
+
+- Warrior: Hamstring on the crowd-control bar, one bar per mob, so you
+  see each slowed mob's time left. It needs a Dyre's Toolkit with
+  Hamstring in its Warrior table (2.10.2 or newer).
+- Druid: Entangling Roots already shows one bar per rooted mob; a test
+  now checks it.
+
 ## 1.1.0
 
 ### Features

@@ -97,7 +97,7 @@ Blizzard's frames, Shadowed Unit Frames, BetterBlizzFrames (also with smooth bar
 - **Druid**: Moonfire, Insect Swarm, Entangling Roots, Rake, Rip, Pounce, Lacerate; Hibernate, Entangling Roots.
 - **Priest**: Shadow Word: Pain, Devouring Plague, Holy Fire; Shackle Undead, Psychic Scream.
 - **Rogue**: Rupture, Garrote; Sap, Blind.
-- **Shaman**: Flame Shock. **Warrior**: Rend; Intimidating Shout. **Paladin**: Turn Undead, Repentance.
+- **Shaman**: Flame Shock. **Warrior**: Rend; Hamstring, Intimidating Shout. **Paladin**: Turn Undead, Repentance.
 
 New in 1.0.0/1.0.1 and not yet checked in game: every class spell above but Serpent Sting and the Warlock and Mage spells that Warlock Tools Forever and Mage Tools Forever already track. Tell us what you see.
 

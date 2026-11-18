@@ -67,7 +67,8 @@ checked. One rank each is enough when the ranks share a duration:
 - Rogue: Rupture 1943 (6 + 2 per combo point), Garrote 703 (18), Sap 6770
   (25/35/45), Blind 2094 (10).
 - Shaman: Flame Shock 8050 (12).
-- Warrior: Rend 772 (9/12/15/18/21), Intimidating Shout 5246 (8).
+- Warrior: Rend 772 (9/12/15/18/21), Intimidating Shout 5246 (8), Hamstring
+  1715 (15; ranks 7372, 7373).
 - Paladin: Turn Undead 2878 (10/15/20), Repentance 20066 (6).
 
 ### Behavior to see in client
@@ -88,7 +89,11 @@ checked. One rank each is enough when the ranks share a duration:
 - Each class: the DoT tracker shows its slots, the crowd-control bar shows
   its bar spells, and the marker spells' macros are written ("! Hibernate",
   "! Shackle", "! Sap", "! Repentance"). Paladin has no DoT tracker; Shaman
-  has no crowd-control bar; Warrior's bar only announces Intimidating Shout.
+  has no crowd-control bar; Warrior's bar shows Hamstring and only announces
+  Intimidating Shout.
+- Hamstring (Warrior) and Entangling Roots (Druid) on two mobs: two bars,
+  one per mob, each with its own time left (15 s for Hamstring). A recast
+  on the same mob keeps its bar. A Warrior's Focus box shows Hamstring.
 - Prediction: a new DoT shows no damage to come until its first tick on
   Era (no base damage in the data, lead decision 5a); on Forever, from its
   tooltip when the tooltip reads, else after a fight's damage meter.
