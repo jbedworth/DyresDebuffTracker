@@ -21,6 +21,10 @@ Compatibility).
   for a panel above your target frame; the Others list stacks new mobs
   upward. It needs a Dyre's Toolkit that has grow directions (2.9.2 or
   later); with an older one the settings do not show.
+- **Hide empty DoT slots** (off by default): a DoT shows only while it is on
+  the mob. The empty places stay, so the DoTs do not move. The target and
+  focus rows then do not recast a DoT when you click them. It needs a Dyre's
+  Toolkit newer than 2.10.2; with an older one the checkbox does not show.
 - Optional dots on nameplates: one per DoT, colored while it is up.
 
 ## Damage to come, and DIES
@@ -86,6 +90,15 @@ AddOn's pages say so.
 - `/debufftracker` works the same, in case another AddOn uses `/ddt`.
 
 Frames move with Dyre's Toolkit's layout mode.
+
+## Profile
+
+With Dyre's Toolkit 2.10.0 or newer, this AddOn's settings, frame places,
+and sizes are part of your Dyre's Toolkit profile. On the Toolkit's settings
+page (Options > AddOns > Dyre's AddOns), copy every Dyre's AddOn's settings
+from another character or the defaults, or export and import them as one
+line of text. They apply at once, with no reload. Your control macros and
+the spell each pinned slot last cast stay with each character.
 
 ## Requirements
 

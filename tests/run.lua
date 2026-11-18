@@ -2,7 +2,7 @@
 --   lua5.1 tests/run.lua
 -- It loads Dyre's Toolkit's real files from ../DyresToolkit when that folder
 -- is there; else (as in CI, which has only this repository, or with
--- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.9.2). The
+-- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.10.2). The
 -- copy may lag; the tests check behavior, never that the two match.
 
 if _VERSION ~= "Lua 5.1" then
@@ -19,7 +19,7 @@ if os.getenv("DDT_TOOLKIT_COPY") ~= "1" then
     end
 end
 print("Dyre's Toolkit from " .. TOOLKIT)
-local TOOLKIT_FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Auras.lua", "Units.lua",
+local TOOLKIT_FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Profiles.lua", "Auras.lua", "Units.lua",
     "HealthBars.lua", "Spells.lua", "Macros.lua", "Announce.lua", "ClassData.lua", "Owners.lua", "Control.lua",
     "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local OLD_TOOLKIT = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Auras.lua", "Units.lua",
@@ -132,7 +132,8 @@ local function fixture(options)
     env.UnitClass = function() return options.className or "Warlock", options.class or "WARLOCK" end
     env.UnitGUID = function(unit) return unit == "player" and "Player-1" or nil end
     env.UnitExists = function() return false end
-    env.UnitName = function() return nil end
+    env.UnitName = function(unit) return unit == "player" and (options.player or "Dyre") or nil end
+    env.GetRealmName = function() return "Realm" end
     env.UnitIsDead = function() return false end
     env.UnitCanAttack = function() return false end
     env.UnitAffectingCombat = function() return false end
@@ -232,6 +233,7 @@ local function fixture(options)
     env.DyresDebuffTrackerDB = options.saved
     if not options.noToolkit then
         local ns = {InitializeMinimap = function() end}
+        state.toolkitNS = ns
         for _, path in ipairs(options.toolkitFiles or TOOLKIT_FILES) do
             local chunk = assert(loadfile(TOOLKIT .. path))
             setfenv(chunk, env)
@@ -633,6 +635,172 @@ test("Grow: Down or Up per DoT panel, repaired, rebuilt, and shown only with a T
     equal(old.settings.DDT_DOTS_GROW_TARGET, nil, "no Grow setting without the Toolkit's grow")
     equal(old.settings.DDT_DOTS_GROW_LIST, nil)
     equal(old.ddt.db.dots.grow.target, "down", "still saved and repaired")
+end)
+
+-- treadpool, a player, 2026-11-17: "Would be cleaner if it only showed the
+-- DoTs that are actively ticking"; John: "Yes, build it".
+test("Hide empty DoT slots: a checkbox only with the Toolkit's flag, repaired, rebuilt, in the profile", function()
+    local realFlag
+    local function WithFlag(state)
+        realFlag = state.toolkit.TRACKER_HIDE_EMPTY == true
+        state.toolkit.TRACKER_HIDE_EMPTY = true
+    end
+    local state = fixture({before = WithFlag})
+    local db, setting = state.ddt.db, state.settings.DDT_DOTS_HIDE_EMPTY
+    assert(setting, "the checkbox on the DoTs page")
+    equal(setting.category, "DoTs")
+    equal(setting.name, "Hide empty DoT slots")
+    equal(setting.default, false)
+    equal(db.dots.hideEmpty, false, "off by default")
+    local rebuilds, tracker = 0, state.ddt.dotTracker
+    local rebuild = tracker.Rebuild
+    tracker.Rebuild = function(self) rebuilds = rebuilds + 1; return rebuild(self) end
+    if realFlag then
+        assert(next(tracker.pinned.target.casts or {}), "recast clicks on the target row while off")
+    end
+    setting.set(true)
+    equal(db.dots.hideEmpty, true)
+    equal(rebuilds, 1, "a change rebuilds the tracker")
+    if realFlag then
+        -- The Toolkit with the change: the pinned target row makes no secure slots.
+        equal(next(tracker.pinned.target.casts or {}), nil, "no recast clicks on the target row")
+    end
+    -- The profile carries it, and its refresh rebuilds.
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Warlock", parts = {DyresDebuffTracker = {dots = {hideEmpty = false}}},
+        pending = {}}
+    local before = rebuilds
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.dots.hideEmpty, false, "copied")
+    assert(rebuilds > before, "the profile refresh rebuilds")
+    -- Bad saved values are repaired.
+    for _, bad in ipairs({"yes", 1, {}}) do
+        equal(fixture({saved = {dots = {hideEmpty = bad}}}).ddt.db.dots.hideEmpty, false, "saved " .. tostring(bad))
+    end
+    equal(fixture({saved = {dots = {hideEmpty = true}}}).ddt.db.dots.hideEmpty, true, "a good value stays")
+    -- Without the flag (an older Toolkit): no checkbox, no error.
+    local old = fixture({before = function(s) s.toolkit.TRACKER_HIDE_EMPTY = nil end})
+    equal(old.settings.DDT_DOTS_HIDE_EMPTY, nil)
+    equal(#old.messages, 0)
+end)
+
+-- Dyre's Toolkit Profile (Toolkit 2.10.0; John, 2026-11-17: "one place to go
+-- to persist your profile").
+local function Same(a, b, path)
+    path = path or "settings"
+    if type(a) ~= "table" or type(b) ~= "table" then
+        equal(a, b, path)
+        return
+    end
+    for key, value in pairs(a) do Same(value, b[key], path .. "." .. tostring(key)) end
+    for key in pairs(b) do
+        if a[key] == nil then error(path .. "." .. tostring(key) .. ": only in the second table") end
+    end
+end
+
+test("profile: joins with RegisterProfilePart, and without it nothing changes", function()
+    local state = fixture()
+    equal(state.ddt.profileJoined, true)
+    local found
+    for _, part in ipairs(state.toolkit.ProfileParts()) do
+        if (part.addon or part) == "DyresDebuffTracker" then found = true end
+    end
+    assert(found, "listed as a part")
+    local old = fixture({before = function(s) s.toolkit.RegisterProfilePart = nil end})
+    equal(old.ddt.profileJoined, false)
+    assert(old.ddt.dotTracker and old.ddt.controlTracker, "the engines still run")
+    equal(#old.messages, 0, "no error, nothing said")
+end)
+
+test("profile: sanitize gives the defaults from {} and repairs any table, never erroring", function()
+    local state = fixture()
+    local ddt = state.ddt
+    Same(ddt.ProfileSettings({}), ddt.SanitizeDB({}, ddt.classData))
+    for _, bad in ipairs({nil, "x", {dots = "x"}, {dots = {order = {"moonfire"}, theme = 7, sizes = 3},
+            control = {markers = "x", texts = {fear = 5}}, predict = {opacity = 0 / 0}, junk = {1, 2}}}) do
+        local clean = ddt.ProfileSettings(bad)
+        equal(#clean.dots.order, #ddt.classData.dots, "every slot of this class")
+        equal(clean.dots.theme, "bars")
+        equal(clean.junk, nil, "unknown keys dropped")
+    end
+end)
+
+test("profile: a copy from another character applies live and keeps this character's own keys", function()
+    local state = fixture()
+    local ddt, ns = state.ddt, state.toolkitNS
+    local db, dots, control = ddt.db, ddt.db.dots, ddt.db.control
+    db.macrosOwned["! Fear"] = true
+    dots.lastCurse = "Curse of Agony"
+    local list = state.named.DyresDebuffTrackerList
+    equal(list.width, 290)
+    -- A Druid's part: its order has Druid slots; its own macro and recast.
+    ns.db.profiles["Leaf - Realm"] = {class = "Druid", parts = {DyresDebuffTracker = {
+        dots = {theme = "bars", trackerSize = 125, grow = {target = "up", list = "up"}, order = {"moonfire", "rake"},
+            health = true, lastCurse = "Curse of Tongues", panelOpacity = {list = 40}},
+        control = {scale = 80, say = true, announce = {fear = true}},
+        predict = {color = "red", diesPlace = "left"},
+        macrosOwned = {["! Hibernate"] = true}}}, pending = {}}
+    local ok, reload = ns.profile:CopyFrom("Leaf - Realm")
+    equal(ok, true)
+    equal(#reload, 0, "live: no reload")
+    equal(db.dots, dots, "the same tables: the engines' stores")
+    equal(db.control, control)
+    equal(dots.trackerSize, 125)
+    equal(dots.sizes.bars.barWidth, 363)
+    equal(dots.grow.target, "up")
+    equal(dots.health, true)
+    equal(dots.panelOpacity.list, 40)
+    equal(#dots.order, #ddt.classData.dots, "a Druid's order repaired for this Warlock")
+    equal(control.scale, 80)
+    equal(control.say, true)
+    equal(control.announce.fear, true)
+    equal(db.predict.color, "red")
+    equal(db.predict.diesPlace, "left")
+    equal(db.macrosOwned["! Fear"], true, "macros stay this character's")
+    equal(db.macrosOwned["! Hibernate"], nil)
+    equal(dots.lastCurse, "Curse of Agony", "the recast memory stays this character's")
+    equal(list.width, 363, "the tracker rebuilt with the new size")
+    equal(ddt.dotTracker.theme, "bars")
+    equal(state.named.DyresDebuffTrackerControl:GetScale(), 0.8, "the control bar's new scale")
+    -- Defaults: a clean slate, own keys kept.
+    ok = ns.profile:CopyFrom(state.toolkit.PROFILE_DEFAULTS)
+    equal(ok, true)
+    equal(dots.trackerSize, 100)
+    equal(list.width, 290)
+    equal(control.scale, 100)
+    equal(db.macrosOwned["! Fear"], true)
+    equal(dots.lastCurse, "Curse of Agony")
+end)
+
+test("profile: export and import round trip; a bad line or a failing part changes nothing", function()
+    local state = fixture()
+    local ddt, ns = state.ddt, state.toolkitNS
+    local db = ddt.db
+    db.dots.trackerSize = 75
+    ddt.ApplyTrackerSize(db.dots)
+    local line = ns.profile:Export()
+    contains(line, "DYRE2:profile:")
+    db.dots.trackerSize = 110
+    db.macrosOwned["! Fear"] = true
+    local ok = ns.profile:Import(line)
+    equal(ok, true)
+    equal(db.dots.trackerSize, 75)
+    equal(db.dots.sizes.bars.barWidth, 218)
+    equal(db.macrosOwned["! Fear"], true, "not in the line, kept")
+    -- A damaged line: refused, nothing changed.
+    local before = ns.profile:Export()
+    equal(ns.profile:Import("DYRE2:profile:garbage:1"), nil)
+    equal(ns.profile:Export(), before)
+    -- Another part that fails: all or nothing.
+    state.toolkit.RegisterProfilePart({addon = "DyresBroken", current = function() return {} end,
+        sanitize = function() error("broken") end})
+    db.dots.trackerSize = 110
+    ok = ns.profile:CopyFrom(state.toolkit.PROFILE_DEFAULTS)
+    equal(ok, nil)
+    equal(db.dots.trackerSize, 110, "nothing changed")
+    -- In combat: refused.
+    state.combat = true
+    equal(ns.profile:CopyFrom(state.toolkit.PROFILE_DEFAULTS), nil)
 end)
 
 test("Toolkit 2.9.1 or later is used; an unreadable version is let through", function()

@@ -252,6 +252,8 @@ function DDT.SanitizeDB(db, classData)
         plateDotsOffset = Whole(dots.plateDotsOffset, 0, 120, 50),
         plateDotsOpacity = Whole(dots.plateDotsOpacity, 10, 100, 100),
         trackerSize = dots.trackerSize, grow = {},
+        -- Toolkit TRACKER_HIDE_EMPTY (treadpool, 2026-11-17; John: "Yes, build it").
+        hideEmpty = Bool(dots.hideEmpty, false),
     }
     DDT.ApplyTrackerSize(clean)
     local grow = type(dots.grow) == "table" and dots.grow or {}

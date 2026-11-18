@@ -8,7 +8,7 @@ checks in the client. Mock tests do not prove in-client behavior.
 - `tests/run.lua` (Lua 5.1 mocks), run from this folder:
   `../WarlockToolsForever/.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua`.
   It loads Dyre's Toolkit's real files from `../DyresToolkit`, else (CI, or
-  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.9.2 copy in `tests/toolkit`.
+  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.10.2 copy in `tests/toolkit`.
 - The release tooling's Python tests: `python -m unittest discover -s tests
   -p "test_*.py"`, and `python scripts/build_release.py --output dist`.
 - Dyre's Toolkit's own suite (`../DyresToolkit/tests/run.lua`) holds the
@@ -16,6 +16,32 @@ checks in the client. Mock tests do not prove in-client behavior.
   durations, tick intervals, flags) and the finisher, late-start, mask,
   trap, and no-base-damage cases.
 - `luac5.1 -p` on every Lua file.
+
+## In-client checks: Hide empty DoT slots
+
+- [ ] With the Toolkit's hide-empty change: turn on "Hide empty DoT slots"
+      on the DoTs page. Know two DoTs, put one on your target: one slot
+      shows, and the other place stays empty (no dim icon, no bar line or
+      label). In combat, cast the second DoT: it shows in its own place, and
+      nothing moves. Click the target and focus rows: nothing is cast. Turn
+      it off: the dim icons and the recast clicks come back (out of combat).
+- [ ] With Dyre's Toolkit 2.10.2: the checkbox does not show.
+
+## In-client checks: the profile (Toolkit 2.10.0)
+
+- [ ] On character A, change DDT settings (theme, Tracker size, Grow, a
+      panel's place, the control bar's scale, a marker, an announce text).
+      On character B (also another class), use the Toolkit page's "Copy
+      settings from" A, then Copy: the DoT panels and the control bar move
+      and resize at once, with no reload and no error; the DoTs and Crowd
+      control pages show A's values. B's own "! ..." macros stay, and B's
+      pinned Curse and Bane slots still recast B's last spells. A Warlock's
+      DoT order copied to a Druid shows the Druid's slots.
+- [ ] "Copy settings from" Defaults: every DDT setting goes back to its
+      default, at once.
+- [ ] Export profile, change a DDT setting, Import profile with the line:
+      the setting comes back, at once.
+- [ ] With Dyre's Toolkit 2.9.x: DDT works as before, with no error.
 
 ## In-client checks: the class spells (the class gate, 2026-11-14)
 

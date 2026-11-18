@@ -191,6 +191,54 @@ character knows, at its best rank; none for a spell it does not know.
   it); the saved value is kept and repaired either way.
   `DDT.TOOLKIT_VERSION` stays 2.9.1: the gate hides only the Grow settings
   on 2.9.1, and the rest works (lead, 2026-11-14, at the 2.9.2 release).
+- Hide empty DoT slots (treadpool, a player, 2026-11-17: "Would be
+  cleaner if it only showed the DoTs that are actively ticking"; John:
+  "Yes, build it"): `db.dots.hideEmpty`, boolean, default false, repaired
+  in SanitizeDB; a setting, so in the profile (the profile refresh's
+  `RefreshDots(true)` rebuilds). A checkbox on the DoTs page after Tracker
+  size, shown only when `DyresToolkit.TRACKER_HIDE_EMPTY` is true (an
+  unreleased Toolkit; 2.10.2 lacks it); a change calls `Rebuild` (out of
+  combat). The Toolkit draws no placeholders, keeps every slot's place, and
+  makes no secure slots on the target and focus rows (no recast clicks).
+  DDT has no "Panel opacity" setting on its pages (`panelOpacity` is only
+  saved, 10 to 100), so its pages do not mention it.
+- Profile (John, 2026-11-17: "start working on the global "all Dyre addons
+  settings" syncing with DT's profile, so there is one place to go to
+  persist your profile"; the design is the Toolkit's docs/PROFILES.md, John
+  2026-11-15): Engines.lua `DDT.RegisterProfile`, called from `DDT.Start`
+  after SanitizeDB and before the frames, only when the Toolkit has
+  `RegisterProfilePart` (2.10.0); with an older Toolkit nothing changes, and
+  `DDT.TOOLKIT_VERSION` is not raised. `current` is DyresDebuffTrackerDB
+  (`DDT.db`). Key audit of DyresDebuffTrackerDB:
+  - In the profile: `dots` (enabled, theme, sizes, trackerSize, grow, order,
+    health, healthText, position and sections (the panels' places),
+    panelOpacity, onPlates, plateDots and its offset and opacity),
+    `predict` (every setting, with the DIES places and offsets), and
+    `control` (enabled, plateTimers, macros, say, position, scale, markers,
+    announce, texts).
+  - `characterKeys` = {"macrosOwned"}: the names of the character macros
+    this AddOn keeps (the control tracker's keeper `owned`); macros are per
+    character, so another character's list must not land here.
+  - The recast memory `dots.lastCurse`, `dots.lastBane`, `dots.lastControl`
+    (each slot's `lastUsed` key; the DoT tracker writes the spell you last
+    cast) is live state, but it sits inside `dots`, and `characterKeys`
+    only skips top-level keys. So the part's sanitize
+    (`DDT.ProfileSettings`) puts this character's live values back after
+    repairing. An export still holds the exporter's values; an import never
+    uses them.
+  - No account table: DDT has none (John: account settings are not in a
+    profile).
+  `DDT.ProfileSettings(settings)`: any table (empty, partial, older, newer,
+  another class's) through SanitizeDB with this character's class table;
+  only dots, predict, control, and macrosOwned are kept; never errors.
+  `DDT.ApplyProfile` (refresh; the Toolkit writes DDT.db in place and
+  applies only out of combat): `ReapplyWidgets` (the control bar's place and
+  scale), the DoT tracker's `ResetPosition` (the panels' places),
+  `ApplyPanelColors`, `RefreshDots(true)` (owner claim from dots.enabled,
+  then `Rebuild`: theme, sizes, grow, order, health, panel opacity; plate
+  dots; predictor), the plate dots' colors and opacity, and the control
+  tracker's `SetScale`, `Rebuild`, and `Refresh` (owner claim, clicks, plate
+  timers, macros through the out-of-combat path). Nothing needs a reload.
 - Not built yet: the other DoT sizes, panel opacity and colors, DoT order, and
   announcement text editors (the engines read them from the store; the
   defaults are WTF's), and the in-client check.
@@ -209,7 +257,7 @@ character knows, at its best rank; none for a spell it does not know.
   and its contract is still 2. An unreadable version is let through.
 - No byte-for-byte copy tests of toolkit files (John, 2026-10-30): the
   suite loads ../DyresToolkit when it is there, else (CI, or
-  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.9.2 in tests/toolkit. The copy
+  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.10.2 in tests/toolkit. The copy
   may lag; refresh it from the Toolkit's release tag when DDT needs newer
   toolkit behavior.
 - Use the toolkit's shared code; never copy it here: `CreateAuraContainer`

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.2.0
+
+### Features
+
+- Hide empty DoT slots: a new checkbox on the DoTs page (off by default).
+  A DoT shows only while it is on the mob. The empty places stay, so the
+  DoTs do not move. The target and focus rows then do not recast a DoT when
+  you click them. It needs a Dyre's Toolkit with this option (newer than
+  2.10.2); with an older one the checkbox does not show.
+- Your Debuff Tracker settings, frame places, and sizes are now part of
+  your Dyre's Toolkit profile: copy them from another character (or the
+  defaults), and export or import them as text, on the Toolkit's settings
+  page. They apply at once, with no reload. Your control macros and the
+  spell each pinned slot last cast stay with each character. This needs
+  Dyre's Toolkit 2.10.0 or newer; with an older one, nothing changes.
+
 ## 1.1.1
 
 ### Features

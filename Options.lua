@@ -169,6 +169,14 @@ local function DotsPage(parent)
     Nest(OnlyWhenOurs(TrackerSize(category, "Bars: the length of the DoT bars. Compact: the size of the DoT "
         .. "icons. From 75% to 125%; one setting for both looks. A change in combat applies when combat ends.",
         Rebuilt), "dots"), master, On)
+    -- Hide empty DoT slots (treadpool, a player, 2026-11-17: "Would be cleaner
+    -- if it only showed the DoTs that are actively ticking"; John: "Yes, build
+    -- it"): only with a Toolkit that has it (TRACKER_HIDE_EMPTY).
+    if DDT.toolkit and DDT.toolkit.TRACKER_HIDE_EMPTY == true then
+        Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_HIDE_EMPTY", "Hide empty DoT slots", Dots, "hideEmpty", false,
+            "Show a DoT only while it is on the mob. The empty places stay, so the DoTs do not move. The target "
+                .. "and focus rows then do not recast a DoT when you click them.", Rebuilt), "dots"), master, On)
+    end
     -- Grow direction per panel: only with a Toolkit that has it (TRACKER_GROW).
     if DDT.toolkit and type(DDT.toolkit.TRACKER_GROW) == "table" then
         local function Grow() return DDT.db.dots.grow end

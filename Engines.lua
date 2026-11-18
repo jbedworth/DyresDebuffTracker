@@ -178,11 +178,79 @@ local function CreateControl()
     tracker:SetScale(db.control.scale / 100)
 end
 
+-- Dyre's Toolkit Profile (Toolkit 2.10.0; John, 2026-11-17: "one place to
+-- go to persist your profile"). The live settings stay in
+-- DyresDebuffTrackerDB; the Toolkit keeps the copies, the UI, and the text.
+-- Kept per character (characterKeys): macrosOwned, the character macros this
+-- AddOn keeps (macros are per character). The DoT tracker's recast memory
+-- (dots.lastCurse, lastBane, lastControl: the spell you last cast, which the
+-- tracker writes) sits inside dots, where characterKeys cannot reach, so the
+-- part's sanitize keeps this character's own values instead.
+DDT.PROFILE_CHARACTER_KEYS = {"macrosOwned"}
+
+-- Any settings table (empty, partial, older, newer, another character's or
+-- class's) to a full, repaired one for this character. Never errors.
+function DDT.ProfileSettings(settings)
+    settings = type(settings) == "table" and settings or {}
+    local clean = DDT.SanitizeDB({dots = settings.dots, predict = settings.predict, control = settings.control,
+        macrosOwned = settings.macrosOwned}, DDT.classData)
+    local live = type(DDT.db) == "table" and type(DDT.db.dots) == "table" and DDT.db.dots or {}
+    for _, slot in ipairs(DDT.classData and DDT.classData.dots or {}) do
+        if slot.lastUsed then
+            clean.dots[slot.lastUsed] = type(live[slot.lastUsed]) == "string" and live[slot.lastUsed] or nil
+        end
+    end
+    return clean
+end
+
+-- A copied or imported profile is in DyresDebuffTrackerDB (written in place,
+-- so every engine's store is the same table): every engine reads it again.
+-- The Toolkit applies a profile only out of combat; the secure parts still
+-- go through each engine's out-of-combat path.
+function DDT.ApplyProfile()
+    local toolkit = DDT.toolkit
+    if toolkit and type(toolkit.ReapplyWidgets) == "function" then
+        toolkit.ReapplyWidgets(addonName)
+    end
+    -- Places, colors, then Refresh (owner claim, from dots.enabled) and
+    -- Rebuild (theme, sizes, grow, order, health, panel opacity).
+    if DDT.dotTracker then
+        DDT.dotTracker:ResetPosition()
+        DDT.dotTracker:ApplyPanelColors()
+    end
+    DDT.RefreshDots(true)
+    if DDT.plateDots then
+        DDT.plateDots:ApplyColors()
+        DDT.plateDots:ApplyOpacity()
+    end
+    -- Scale and look, then Refresh: the owner claim (control.enabled), the
+    -- clicks, the plate timers, and the macros (each out of combat).
+    local control = DDT.controlTracker
+    if control then
+        control:SetScale(DDT.db.control.scale / 100)
+        control:Rebuild()
+        control:Refresh()
+    end
+end
+
+-- Joins the profile, where the Toolkit has one (2.10.0); else nothing changes.
+function DDT.RegisterProfile()
+    local toolkit = DDT.toolkit
+    if not toolkit or type(toolkit.RegisterProfilePart) ~= "function" then
+        return false
+    end
+    return toolkit.RegisterProfilePart({addon = addonName, title = DDT.TITLE,
+        current = function() return DDT.db end, sanitize = DDT.ProfileSettings,
+        characterKeys = DDT.PROFILE_CHARACTER_KEYS, refresh = DDT.ApplyProfile}) == true
+end
+
 -- At login: your class, its table, and the engines it has data for.
 function DDT.Start()
     DDT.class = PlayerClass()
     DDT.classData = DDT.class and DDT.toolkit.ClassSpells(DDT.class) or nil
     DDT.SanitizeDB(DDT.db, DDT.classData)
+    -- After the saved settings, before the frames: a waiting part lands now.
+    DDT.profileJoined = DDT.RegisterProfile()
     if not DDT.classData then
         return
     end
