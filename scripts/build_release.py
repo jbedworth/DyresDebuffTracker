@@ -20,11 +20,12 @@ from pathlib import Path
 
 
 ADDON = "DyresDebuffTracker"
-RUNTIME_FILES = ("Core.lua", "Engines.lua", "Options.lua")
+RUNTIME_FILES = ("Core.lua", "Engines.lua", "Frost.lua", "Options.lua")
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
 # The one runtime texture: the AddOn list icon, made by scripts/make_artwork.py.
-# The builder requires uncompressed 32-bit, square, power-of-two TGAs.
-MEDIA_FILES = ("Textures/Icon.tga",)
+# The builder requires uncompressed 32-bit TGAs with power-of-two sides (the
+# Mage's arcs are 128 x 32; the client takes any power-of-two sides).
+MEDIA_FILES = ("Textures/Icon.tga", "Textures/FrozenArc.tga", "Textures/ChilledArc.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2
@@ -108,7 +109,7 @@ def _text(name, data):
 
 
 def _validate_tga(name, data):
-    """Require an uncompressed 32-bit square TGA with power-of-two sides."""
+    """Require an uncompressed 32-bit TGA with power-of-two sides."""
     if len(data) < TGA_HEADER_SIZE:
         raise ValueError(f"{name}: TGA header is truncated")
     id_length, color_map, image_type = data[0], data[1], data[2]
@@ -117,8 +118,8 @@ def _validate_tga(name, data):
     depth, descriptor = data[16], data[17]
     if color_map != 0 or image_type != TGA_TRUECOLOR:
         raise ValueError(f"{name}: require an uncompressed true-color TGA")
-    if width != height or width not in TGA_SIZES:
-        raise ValueError(f"{name}: require square power-of-two TGA dimensions")
+    if width not in TGA_SIZES or height not in TGA_SIZES:
+        raise ValueError(f"{name}: require power-of-two TGA dimensions")
     if depth != 32 or descriptor & 0x0F != 8:
         raise ValueError(f"{name}: require 32-bit TGA pixels with 8 alpha bits")
     if len(data) != TGA_HEADER_SIZE + id_length + width * height * 4:

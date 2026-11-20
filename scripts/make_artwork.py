@@ -1,6 +1,6 @@
-"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots]
+"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots] [--arcs]
 
-Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all three):
+Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all four):
 - artwork/dyres-debuff-tracker-logo.svg, the 1024 x 1024 vector source: the
   family's dark-brown field and fine gold border (as Dyre's Debuff Tracker's and
   Warlock Tools Forever's logos), a gold clock dial with twelve ticks, a
@@ -11,6 +11,13 @@ Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all three):
 - Textures/Icon.tga, the TOC icon: the dial without the frame, rendered at
   512 and averaged down to 64 x 64, uncompressed 32-bit BGRA, top-left origin
   (as WTF's Textures/Stripes.tga).
+- Textures/FrozenArc.tga and Textures/ChilledArc.tga, the Mage's arcs above
+  enemy nameplates (John, 2026-11-18): SVG rendered with headless Chrome at
+  4x on black and on white (the two shots give the alpha), averaged down to
+  256 x 64, uncompressed 32-bit BGRA, top-left origin; fixed seeds. Frozen: a
+  cracked ice crust with faceted crystal shards, tallest in the middle, a blue
+  glow, and sparkles. Chilled: a thin band of frost mist, rime needles, and
+  six snowflakes. Both curve up, as an arc over the plate. Our own art: nothing is copied from another AddOn.
 - artwork/screenshots/*.png, listing crops of John's raw screenshots (the
   CROPS table: source file, box in source pixels), cut by headless Chrome,
   which decodes WebP. The raw files are never changed.
@@ -18,6 +25,7 @@ Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all three):
 Standard library only, plus Chrome or Edge (CHROME, else the usual paths)."""
 import math
 import os
+import random
 import struct
 import subprocess
 import sys
@@ -31,6 +39,10 @@ SHOTS = ART / "screenshots"
 LOGO = ART / "dyres-debuff-tracker-logo.svg"
 ICON = ROOT / "Textures" / "Icon.tga"
 ICON_SIZE, ICON_RENDER = 64, 512
+ARC_W, ARC_H, ARC_SAMPLES = 256, 64, 4
+# The band's circle: its center far below the texture, so the band is a gentle
+# curve; the top of the band is at y 34 in the middle.
+ARC_CX, ARC_CY, ARC_R = 128, 386, 352
 CHROMES = (r"C:\Program Files\Google\Chrome\Application\chrome.exe",
            r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
            "/usr/bin/google-chrome", "/usr/bin/chromium")
@@ -223,6 +235,162 @@ def write_icon(png):
     ICON.write_bytes(header + pixels)
 
 
+def on_arc(x, lift=0.0):
+    """Point on the band's top edge above x, raised by lift; and the outward normal angle."""
+    a = math.asin((x - ARC_CX) / ARC_R)
+    r = ARC_R + lift
+    return (ARC_CX + r * math.sin(a), ARC_CY - r * math.cos(a)), a
+
+
+def shard(rng, x, height, width, light, mid, dark):
+    (bx, by), a = on_arc(x, -2)
+    tilt = a + rng.uniform(-0.18, 0.18)
+    ux, uy = math.sin(tilt), -math.cos(tilt)   # up along the shard
+    vx, vy = -uy, ux                            # across
+    tip = (bx + ux * height, by + uy * height)
+    shoulder = 0.28 + rng.uniform(-0.05, 0.08)
+    left = (bx + ux * height * shoulder - vx * width / 2, by + uy * height * shoulder - vy * width / 2)
+    right = (bx + ux * height * shoulder + vx * width / 2, by + uy * height * shoulder + vy * width / 2)
+    base_l = (bx - vx * width * 0.3, by - vy * width * 0.3)
+    base_r = (bx + vx * width * 0.3, by + vy * width * 0.3)
+    ridge = (bx + ux * height * 0.15, by + uy * height * 0.15)
+    p = lambda *q: " ".join(f"{x:.2f},{y:.2f}" for x, y in q)
+    return (f'<polygon points="{p(base_l, left, tip, ridge)}" fill="{light}"/>'
+            f'<polygon points="{p(base_r, right, tip, ridge)}" fill="{mid}"/>'
+            f'<polygon points="{p(base_l, left, tip, right, base_r)}" fill="none" stroke="{dark}" stroke-width="0.6"/>'
+            f'<polyline points="{p(ridge, tip)}" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.9"/>')
+
+
+def band_path(rng, top_lift, bottom_lift, jag):
+    xs = [16 + i * 4 for i in range(57)]
+    top = [on_arc(x, top_lift + rng.uniform(-jag, jag))[0] for x in xs]
+    bottom = [on_arc(x, bottom_lift + rng.uniform(-jag, jag))[0] for x in reversed(xs)]
+    return "M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in top + bottom) + "Z"
+
+
+def star(x, y, r, thin=0.18):
+    pts = []
+    for i in range(8):
+        a = i * math.pi / 4
+        rr = r if i % 2 == 0 else r * thin
+        pts.append(f"{x + rr * math.sin(a):.2f},{y - rr * math.cos(a):.2f}")
+    return f'<polygon points="{" ".join(pts)}" fill="#fff"/>'
+
+
+def ice_defs():
+    return f'''<defs>
+<filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}"><feGaussianBlur stdDeviation="2.4"/></filter>
+<filter id="soft" filterUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}"><feGaussianBlur stdDeviation="0.7"/></filter>
+<filter id="frost" filterUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}">
+<feTurbulence type="fractalNoise" baseFrequency="0.35" numOctaves="2" seed="7"/>
+<feDisplacementMap in="SourceGraphic" scale="3.5" xChannelSelector="R" yChannelSelector="G"/></filter>
+<linearGradient id="bandfill" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#f4fbff"/><stop offset="0.45" stop-color="#9fd4f7"/><stop offset="1" stop-color="#2f74c8"/></linearGradient>
+<linearGradient id="ends" x1="0" y1="0" x2="1" y2="0">
+<stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset="0.1" stop-color="#fff"/>
+<stop offset="0.9" stop-color="#fff"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
+<mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}"><rect width="{ARC_W}" height="{ARC_H}" fill="url(#ends)"/></mask></defs>'''
+
+
+def frozen_svg():
+    rng = random.Random(4471)
+    band = band_path(rng, 1.5, -7, 0.9)
+    shards = []
+    # (x, height, width): tallest in the middle, smaller to the ends.
+    plan = [(128, 34, 11), (104, 24, 9), (152, 25, 9), (82, 17, 8), (175, 18, 8),
+            (60, 11, 7), (197, 12, 7), (40, 7, 6), (217, 7, 6),
+            (116, 13, 6), (141, 14, 6), (93, 9, 5), (164, 10, 5)]
+    for x, h, w in sorted(plan, key=lambda s: s[1]):
+        shards.append(shard(rng, x + rng.uniform(-1.5, 1.5), h, w, "#eef9ff", "#8cc6f0", "#3d86d6"))
+    shards.sort(key=len)
+    sparkle = [star(128, 6.5, 6), star(100, 19, 3.2), star(158, 17.5, 3.4)]
+    art = (f'<path d="{band}" fill="url(#bandfill)" stroke="#e8f6ff" stroke-width="0.6"/>'
+           + "".join(shards))
+    cracks = "".join(
+        f'<path d="M{on_arc(x, -1)[0][0]:.1f},{on_arc(x, -1)[0][1]:.1f} l{rng.uniform(-3, 3):.1f},{rng.uniform(3, 5):.1f}" '
+        f'stroke="#ffffff" stroke-width="0.4" opacity="0.7"/>' for x in range(30, 230, 9))
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{ARC_W*ARC_SAMPLES}" height="{ARC_H*ARC_SAMPLES}" viewBox="0 0 {ARC_W} {ARC_H}">{ice_defs()}
+<g mask="url(#m)">
+<g filter="url(#glow)" opacity="0.85" fill="#5fb8ff">{art.replace('fill="url(#bandfill)"', 'fill="#5fb8ff"')}</g>
+{art}{cracks}
+<g filter="url(#soft)">{"".join(sparkle)}</g>{"".join(sparkle)}
+</g></svg>'''
+
+
+def chilled_svg():
+    rng = random.Random(1372)
+    mist = band_path(rng, 0, -4, 1.2)
+    needles = []
+    for i in range(46):
+        x = 22 + i * 4.7 + rng.uniform(-1, 1)
+        (bx, by), a = on_arc(x, -1)
+        t = a + rng.uniform(-0.5, 0.5)
+        h = rng.uniform(2.5, 6.5) * (1 - abs(x - ARC_CX) / 150)
+        needles.append(f'<line x1="{bx:.2f}" y1="{by:.2f}" x2="{bx + math.sin(t) * h:.2f}" '
+                       f'y2="{by - math.cos(t) * h:.2f}" stroke="#e6f6ff" stroke-width="0.7" stroke-linecap="round"/>')
+    flakes = []
+    for x in (44, 76, 108, 148, 180, 212):
+        (fx, fy), _ = on_arc(x + rng.uniform(-3, 3), 6 + rng.uniform(-1, 2))
+        r = 3.6 if 90 < x < 170 else 3.0
+        arms = "".join(
+            f'<line x1="{fx:.2f}" y1="{fy:.2f}" x2="{fx + r * math.cos(k * math.pi / 3):.2f}" '
+            f'y2="{fy + r * math.sin(k * math.pi / 3):.2f}"/>' for k in range(6))
+        flakes.append(f'<g stroke="#ffffff" stroke-width="0.8" stroke-linecap="round">{arms}</g>')
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{ARC_W*ARC_SAMPLES}" height="{ARC_H*ARC_SAMPLES}" viewBox="0 0 {ARC_W} {ARC_H}">{ice_defs()}
+<g mask="url(#m)">
+<path d="{mist}" fill="#7cc8ff" opacity="0.55" filter="url(#glow)"/>
+<path d="{mist}" fill="#cdeeff" opacity="0.75" filter="url(#frost)"/>
+<g filter="url(#soft)" opacity="0.8">{"".join(needles)}</g>{"".join(needles)}
+<g filter="url(#glow)" opacity="0.9">{"".join(flakes)}</g>{"".join(flakes)}
+</g></svg>'''
+
+
+def svg_texture(svg, work):
+    """The SVG on black and on white (the two shots give the alpha), averaged
+    ARC_SAMPLES x ARC_SAMPLES: rows of (r, g, b, a) floats 0-1."""
+    shots = []
+    for name, background in (("black", "#000"), ("white", "#fff")):
+        page, png = work / f"arc-{name}.html", work / f"arc-{name}.png"
+        page.write_text(f'<html><body style="margin:0;background:{background}">{svg}</body></html>',
+                        encoding="utf-8")
+        shoot(page, png, ARC_W * ARC_SAMPLES, ARC_H * ARC_SAMPLES)
+        shots.append(read_png(png)[2])
+    black, white = shots
+    n, texture = ARC_SAMPLES, []
+    for y in range(ARC_H):
+        row = []
+        for x in range(ARC_W):
+            color, alpha = [0.0, 0.0, 0.0], 0.0
+            for sy in range(n):
+                for sx in range(n):
+                    i, j = y * n + sy, 4 * (x * n + sx)
+                    b, w = black[i][j:j + 3], white[i][j:j + 3]
+                    alpha += max(0.0, min(1.0, 1 - sum(w[c] - b[c] for c in range(3)) / 765))
+                    for c in range(3):
+                        color[c] += b[c] / 255  # on black: the color times its alpha
+            alpha /= n * n
+            row.append(tuple(min(1.0, v / (n * n) / alpha) if alpha > 0.002 else 0.0 for v in color)
+                       + (alpha,))
+        texture.append(row)
+    return texture
+
+
+def write_tga(path, texture):
+    """Uncompressed 32-bit BGRA, top-left origin."""
+    header = bytes((0, 0, 2)) + bytes(9) + ARC_W.to_bytes(2, "little") + ARC_H.to_bytes(2, "little")         + bytes((32, 0x28))
+    out = bytearray()
+    for row in texture:
+        for r, g, b, a in row:
+            out += bytes(round(255 * v) for v in (b, g, r, a))
+    path.parent.mkdir(exist_ok=True)
+    path.write_bytes(header + out)
+
+
+def make_arcs(work):
+    write_tga(ROOT / "Textures" / "FrozenArc.tga", svg_texture(frozen_svg(), work))
+    write_tga(ROOT / "Textures" / "ChilledArc.tga", svg_texture(chilled_svg(), work))
+
+
 def make_logo(work):
     LOGO.write_text(svg(), encoding="utf-8", newline="\n")
     shoot(LOGO, ART / "dyres-debuff-tracker-logo.png", 1024, 1024)
@@ -255,9 +423,11 @@ def make_screenshots(work):
 
 
 def main(args):
-    wanted = set(args) or {"--logo", "--icon", "--screenshots"}
+    wanted = set(args) or {"--logo", "--icon", "--screenshots", "--arcs"}
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
+        if "--arcs" in wanted:
+            make_arcs(work)
         if "--logo" in wanted:
             make_logo(work)
         if "--icon" in wanted:

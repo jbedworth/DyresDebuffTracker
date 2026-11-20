@@ -24,7 +24,7 @@ local TOOLKIT_FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", 
     "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local OLD_TOOLKIT = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Auras.lua", "Units.lua",
     "HealthBars.lua"}
-local RUNTIME = {"Core.lua", "Engines.lua", "Options.lua"}
+local RUNTIME = {"Core.lua", "Engines.lua", "Frost.lua", "Options.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -119,13 +119,30 @@ local SPELLS = {[172] = "Corruption", [348] = "Immolate", [980] = "Curse of Agon
 local function fixture(options)
     options = options or {}
     local state = {messages = {}, frames = {}, named = {}, macros = {}, settings = {}, pages = {}, headings = {},
-        timers = {}, now = 100}
+        timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0}
     local env = setmetatable({}, {__index = _G})
     env._G = env
     env.SlashCmdList = {}
     env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message) state.messages[#state.messages + 1] = message end}
     env.UIParent = newFrame(state, "Frame", "UIParent")
-    env.CreateFrame = function(kind, name, parent, template) return newFrame(state, kind, name, parent, template) end
+    env.CreateFrame = function(kind, name, parent, template)
+        local frame = newFrame(state, kind, name, parent, template)
+        if kind == "AuraContainer" then
+            -- Forever's engine container: it reads the auras itself; the
+            -- AddOn only gives it slots, a unit, and regions to draw.
+            state.containers[#state.containers + 1] = frame
+            state.containerCombat[#state.containerCombat + 1] = state.combat == true
+            frame.slots, frame.unit = {}, "none"
+            function frame:AddAuraSlot(key, filter, slotOptions)
+                local button = newFrame(state, "Button", nil, self)
+                self.slots[#self.slots + 1] = {key = key, filter = filter, options = slotOptions, button = button}
+                slotOptions.initializeFrame(button)
+            end
+            function frame:SetUnit(unit) self.unit = unit end
+            function frame:UpdateAllAuras() end
+        end
+        return frame
+    end
     env.InCombatLockdown = function() return state.combat == true end
     env.GetTime = function() return state.now end
     env.C_Timer = {After = function(delay, fn) state.timers[#state.timers + 1] = fn end}
@@ -158,7 +175,14 @@ local function fixture(options)
         IsSpellKnown = function(id) return known[id] == true end,
         HasPetSpells = function() return 0 end,
     }
-    env.C_UnitAuras = {GetAuraDataByIndex = function() return nil end}
+    -- options.auras(unit, index, filter): the auras Classic Era's plain-Lua container reads.
+    env.C_UnitAuras = {GetAuraDataByIndex = function(unit, index, filter)
+        state.auraReads = state.auraReads + 1
+        return options.auras and options.auras(unit, index, filter) or nil
+    end}
+    if options.engine then
+        env.C_XMLUtil = {GetTemplateInfo = function(name) return name == "CustomAuraContainerTemplate" and {} or nil end}
+    end
     env.C_NamePlate = {GetNamePlateForUnit = function() return nil end}
     env.C_CombatLog = {GetCurrentEventInfo = function() end,
         IsCombatLogRestricted = function() return options.restricted == true end}
@@ -172,7 +196,10 @@ local function fixture(options)
                 return ({WarlockToolsForever = "Warlock Tools Forever", MageToolsForever = "Mage Tools Forever"})[addon]
             end
         end,
-        IsAddOnLoaded = function(addon) return loaded[addon] ~= nil end,
+        IsAddOnLoaded = function(addon)
+            return loaded[addon] ~= nil or (addon == "Blizzard_AuraContainer" and options.engine == true)
+        end,
+        LoadAddOn = function() end,
     }
     -- Character macros.
     env.Constants = {MacroConsts = {MAX_CHARACTER_MACROS = 18}}
@@ -684,6 +711,71 @@ test("Hide empty DoT slots: a checkbox only with the Toolkit's flag, repaired, r
     equal(#old.messages, 0)
 end)
 
+-- A player, 2026-11-19: "Is there a way to disable the target dot window or
+-- hide it?"; John: "a 3 panels toggle show/off, default to show".
+test("Panel switches: three checkboxes only with the Toolkit's TRACKER_PANELS, repaired, live, in the profile", function()
+    local realFlag
+    local function WithFlag(state)
+        realFlag = type(state.toolkit.TRACKER_PANELS) == "table"
+        state.toolkit.TRACKER_PANELS = state.toolkit.TRACKER_PANELS or {"target", "focus", "list"}
+    end
+    local state = fixture({before = WithFlag})
+    local db, tracker = state.ddt.db, state.ddt.dotTracker
+    local names = {TARGET = "Show Target panel", FOCUS = "Show Focus panel", LIST = "Show Others panel"}
+    for suffix, name in pairs(names) do
+        local setting = state.settings["DDT_DOTS_SHOW_" .. suffix]
+        assert(setting, "the checkbox " .. name)
+        equal(setting.category, "DoTs")
+        equal(setting.name, name)
+        equal(setting.default, true)
+    end
+    for _, key in ipairs({"target", "focus", "list"}) do
+        equal(db.dots.show[key], true, key .. " shown by default")
+    end
+    local refreshes = 0
+    local refresh = tracker.Refresh
+    tracker.Refresh = function(self) refreshes = refreshes + 1; return refresh(self) end
+    if realFlag then
+        equal(tracker.sections.target:IsShown(), true, "the Target panel shows")
+    end
+    state.settings.DDT_DOTS_SHOW_TARGET.set(false)
+    equal(db.dots.show.target, false)
+    equal(db.dots.show.focus, true, "the others stay")
+    equal(refreshes, 1, "a change refreshes the tracker")
+    if realFlag then
+        equal(tracker.sections.target:IsShown(), false, "the Target panel hides at once")
+        equal(tracker.sections.focus:IsShown(), true, "the Focus panel stays")
+    end
+    state.settings.DDT_DOTS_SHOW_TARGET.set(true)
+    if realFlag then
+        equal(tracker.sections.target:IsShown(), true, "the Target panel shows again")
+    end
+    -- The profile carries it (it is under dots).
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Warlock",
+        parts = {DyresDebuffTracker = {dots = {show = {target = true, focus = false, list = false}}}}, pending = {}}
+    local before = refreshes
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.dots.show.target, true, "copied")
+    equal(db.dots.show.focus, false, "copied")
+    equal(db.dots.show.list, false, "copied")
+    assert(refreshes > before, "the profile refresh refreshes the tracker")
+    -- Only false hides: bad saved values show the panel.
+    for _, bad in ipairs({"no", 0, {}, true}) do
+        local saved = fixture({saved = {dots = {show = {target = bad, focus = bad, list = bad}}}}).ddt.db.dots.show
+        equal(saved.target, true, "saved " .. tostring(bad))
+        equal(saved.list, true, "saved " .. tostring(bad))
+    end
+    equal(fixture({saved = {dots = {show = "off"}}}).ddt.db.dots.show.focus, true, "not a table: all shown")
+    equal(fixture({saved = {dots = {show = {list = false}}}}).ddt.db.dots.show.list, false, "false stays")
+    -- Without the flag (an older Toolkit): no checkboxes, no error, still saved.
+    local old = fixture({before = function(s) s.toolkit.TRACKER_PANELS = nil end})
+    equal(old.settings.DDT_DOTS_SHOW_TARGET, nil)
+    equal(old.settings.DDT_DOTS_SHOW_LIST, nil)
+    equal(#old.messages, 0)
+    equal(old.ddt.db.dots.show.target, true, "still saved and repaired")
+end)
+
 -- Dyre's Toolkit Profile (Toolkit 2.10.0; John, 2026-11-17: "one place to go
 -- to persist your profile").
 local function Same(a, b, path)
@@ -803,6 +895,232 @@ test("profile: export and import round trip; a bad line or a failing part change
     equal(ns.profile:CopyFrom(state.toolkit.PROFILE_DEFAULTS), nil)
 end)
 
+-- The Mage's frozen and chilled arcs (John, 2026-11-18).
+local MAGE = {class = "MAGE", className = "Mage", book = {{118, "Polymorph"}, {133, "Fireball"}}}
+
+local function Mage(extra)
+    local options = {}
+    for key, value in pairs(MAGE) do options[key] = value end
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+-- A nameplate for unit with Blizzard's health bar, added as the client does.
+local function AddPlate(state, unit, hostile)
+    local env = state.env
+    state.plates = state.plates or {}
+    state.hostile = state.hostile or {}
+    local plate = env.CreateFrame("Frame", nil, env.UIParent)
+    plate.UnitFrame = {healthBar = env.CreateFrame("StatusBar", nil, plate)}
+    state.plates[unit] = plate
+    state.hostile[unit] = hostile ~= false
+    env.C_NamePlate.GetNamePlateForUnit = function(token) return state.plates[token] end
+    env.UnitExists = function(token) return state.plates[token] ~= nil end
+    env.UnitCanAttack = function(_, token) return state.hostile[token] == true end
+    emit(state, "NAME_PLATE_UNIT_ADDED", unit)
+    return plate
+end
+
+local function RemovePlate(state, unit)
+    emit(state, "NAME_PLATE_UNIT_REMOVED", unit)
+    state.plates[unit] = nil
+end
+
+local function SlotBy(container, key)
+    for _, slot in ipairs(container.slots) do
+        if slot.key == key then return slot end
+    end
+end
+
+test("frozen and chilled arcs: Mages only, on by default, with their settings, repaired", function()
+    local warlock = fixture()
+    equal(warlock.ddt.frostArcs, nil, "no arcs for a Warlock")
+    equal(warlock.settings.DDT_FROST, nil, "no rows for other classes")
+    equal(warlock.heading("Frozen and chilled"), nil)
+    local state = Mage()
+    assert(state.ddt.frostArcs, "a Mage has the arcs")
+    local setting = state.settings.DDT_FROST
+    assert(setting, "the switch")
+    equal(setting.category, "DoTs")
+    equal(setting.default, true)
+    equal(state.ddt.db.frost.enabled, true, "on by default")
+    assert(state.heading("DoTs: Frozen and chilled"), "its heading on the DoTs page")
+    equal(state.settings.DDT_FROST_OFFSET.default, 10)
+    equal(state.settings.DDT_FROST_SIZE.default, 100)
+    equal(#state.messages, 0)
+    local bad = Mage({saved = {frost = {enabled = "yes", offset = 999, size = 10.5}}}).ddt.db.frost
+    equal(bad.enabled, true, "not a boolean: on")
+    equal(bad.offset, 60, "at most 60")
+    equal(bad.size, 100, "not a whole number: the default")
+    local good = Mage({saved = {frost = {enabled = false, offset = 0, size = 200}}}).ddt.db.frost
+    equal(good.enabled, false)
+    equal(good.offset, 0)
+    equal(good.size, 200)
+    -- The art: 256 x 64, uncompressed BGRA, top-left origin.
+    for _, name in ipairs({"FrozenArc", "ChilledArc"}) do
+        local data = assert(io.open("Textures/" .. name .. ".tga", "rb")):read("*a")
+        equal(#data, 18 + 256 * 64 * 4, name)
+        equal(data:byte(13) + data:byte(14) * 256, 256, name .. " width")
+        equal(data:byte(15) + data:byte(16) * 256, 64, name .. " height")
+        equal(data:byte(18), 0x28, name)
+    end
+end)
+
+test("frozen and chilled arcs on Forever: one HARMFUL slot each, a set, nothing read, also in combat", function()
+    local state = Mage({engine = true})
+    local arcs = state.ddt.frostArcs
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "holders made ahead, out of combat")
+    state.combat = true
+    local plate = AddPlate(state, "nameplate1")
+    local holder = arcs.byUnit.nameplate1
+    assert(holder, "the plate got a holder")
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "from the pool: none made in combat")
+    equal(holder.parent, plate, "parented to the plate")
+    equal(holder.point[2], plate.UnitFrame.healthBar, "on the bar FindPlateBar finds")
+    equal(holder.shown, true, "a hostile mob")
+    local container = holder.container
+    equal(container.kind, "AuraContainer", "the engine's container")
+    equal(container.unit, "nameplate1")
+    equal(#container.slots, 3, "frozen, chilled, and the armor's chill")
+    local frozen, chilled = SlotBy(container, "frozen"), SlotBy(container, "chilled")
+    local armor = SlotBy(container, "chilledArmor")
+    equal(frozen.filter, "HARMFUL", "any Mage's freeze: Shatter works on it")
+    equal(chilled.filter, "HARMFUL|PLAYER", "only your Chill procs your talents")
+    equal(armor.filter, "HARMFUL", "the armor's chill: no PLAYER (found in client, 6136)")
+    local frozenIDs = frozen.options.candidateFilters.includeSpellIDs
+    local chilledIDs = chilled.options.candidateFilters.includeSpellIDs
+    local armorIDs = armor.options.candidateFilters.includeSpellIDs
+    equal(frozenIDs[1], nil, "a set, not a list")
+    equal(chilledIDs[1], nil, "a set, not a list")
+    equal(armorIDs[1], nil, "a set, not a list")
+    for _, id in ipairs({122, 865, 6131, 10230, 12494}) do equal(frozenIDs[id], true, "frozen " .. id) end
+    for _, id in ipairs({116, 25304, 120, 10161, 12484, 12486}) do
+        equal(chilledIDs[id], true, "chilled " .. id)
+    end
+    equal(armorIDs[6136], true, "Frost Armor's Chilled")
+    equal(armorIDs[7321], true, "Ice Armor's Chilled")
+    equal(chilledIDs[6136], nil, "not in the PLAYER slot")
+    equal(frozenIDs[116], nil, "Frostbolt chills; it does not freeze")
+    equal(chilledIDs[122], nil, "Frost Nova freezes")
+    -- Both arcs are the engine's buttons, set up once: Frozen above Chilled.
+    equal(holder.arcs.frozen, frozen.button)
+    equal(holder.arcs.chilled, chilled.button)
+    equal(holder.arcs.chilledArmor, armor.button)
+    equal(frozen.button.point[5], 7, "Frozen 7 above")
+    equal(chilled.button.point[5], 0)
+    equal(armor.button.point[5], 0, "the armor's chill: the chilled arc's place")
+    -- After every AddOn's handler: placed again, on the bar a plate AddOn may have made.
+    local other = state.env.CreateFrame("StatusBar", nil, plate)
+    plate.UnitFrame = {healthBar = other}
+    for _, timer in ipairs(state.timers) do timer() end
+    equal(holder.point[2], other, "placed again on the newer bar")
+    -- A friendly unit: hidden. UNIT_FLAGS follows a change.
+    AddPlate(state, "nameplate2", false)
+    equal(arcs.byUnit.nameplate2.shown, false)
+    state.hostile.nameplate2 = true
+    emit(state, "UNIT_FLAGS", "nameplate2")
+    equal(arcs.byUnit.nameplate2.shown, true)
+    -- Removed: the holder lets go and goes back to the pool; added again, reused.
+    RemovePlate(state, "nameplate1")
+    equal(holder.container.unit, "none")
+    equal(holder.shown, false)
+    equal(holder.parent, state.env.UIParent)
+    equal(arcs.byUnit.nameplate1, nil)
+    AddPlate(state, "nameplate3")
+    equal(arcs.byUnit.nameplate3, holder, "the pool's holder again")
+    -- More plates than the pool in combat: made then, as PlateDots does.
+    for index = 4, 13 do AddPlate(state, "nameplate" .. index) end
+    assert(#arcs.all > state.ddt.FROST_PREWARM, "made in combat when the pool ran dry")
+    equal(state.auraReads, 0, "no AddOn code reads an aura")
+    state.combat = false
+    local made = #arcs.all
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(#arcs.all, made, "enough holders: none more")
+end)
+
+test("frozen and chilled arcs in /ddt debug: plates, shown, visible, anchors; never an aura", function()
+    local state = Mage({engine = true})
+    AddPlate(state, "nameplate1")
+    AddPlate(state, "nameplate2", false)
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("frost on=true engine=engine holders=10 plates=2 shown=1 visible=1 anchors=[Blizzard=2]"),
+        true, "one line for the arcs")
+    equal(state.auraReads, 0, "the line reads no aura")
+    state.settings.DDT_FROST.set(false)
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("frost on=false engine=engine holders=10 plates=0"), true, "off: no plates")
+    local warlock = fixture()
+    warlock.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(warlock.said("frost none (Mage only)"), true)
+end)
+
+test("frozen and chilled arcs on Classic Era: both at once, only your own Chill", function()
+    -- unit -> {{spellId, yours}}: Frost Nova from another Mage, your Frostbolt.
+    local auras = {nameplate1 = {{122, false}, {116, true}}}
+    local function Read(unit, index, filter)
+        local n = 0
+        for _, aura in ipairs(auras[unit] or {}) do
+            if aura[2] or not filter:find("PLAYER", 1, true) then
+                n = n + 1
+                if n == index then
+                    return {spellId = aura[1], name = "x", icon = 1, duration = 8, expirationTime = 108}
+                end
+            end
+        end
+    end
+    local state = Mage({auras = Read})
+    AddPlate(state, "nameplate1")
+    local holder = state.ddt.frostArcs.byUnit.nameplate1
+    equal(holder.container.kind, "Frame", "the plain-Lua container")
+    equal(holder.arcs.frozen.shown, true, "frozen: another Mage's Frost Nova counts")
+    equal(holder.arcs.chilled.shown, true, "chilled: your Frostbolt; both at once")
+    auras.nameplate1 = {{116, false}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(holder.arcs.frozen.shown, false)
+    equal(holder.arcs.chilled.shown, false, "another Mage's chill gives you no proc")
+    auras.nameplate1 = {{12494, false}, {6136, false}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(holder.arcs.frozen.shown, true, "Frostbite's freeze")
+    equal(holder.arcs.chilled.shown, false)
+    equal(holder.arcs.chilledArmor.shown, true, "Frost Armor's chill, whatever its source says")
+end)
+
+test("frozen and chilled arcs: off, height, and size apply at once, and the profile carries them", function()
+    local state = Mage({engine = true})
+    local arcs, db = state.ddt.frostArcs, state.ddt.db
+    AddPlate(state, "nameplate1")
+    local holder = arcs.byUnit.nameplate1
+    equal(holder.scale, 1)
+    equal(holder.point[5], 10, "10 pixels above the bar")
+    state.settings.DDT_FROST_SIZE.set(200)
+    state.settings.DDT_FROST_OFFSET.set(30)
+    holder = arcs.byUnit.nameplate1
+    equal(holder.scale, 2)
+    equal(holder.point[5], 15, "30 pixels at scale 2")
+    state.settings.DDT_FROST.set(false)
+    equal(arcs.byUnit.nameplate1, nil, "off: no arcs")
+    equal(holder.shown, false)
+    AddPlate(state, "nameplate2")
+    equal(arcs.byUnit.nameplate2, nil, "off: a new plate gets none")
+    -- A profile copy turns them on again, with its own size.
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Mage", parts = {DyresDebuffTracker = {frost = {enabled = true,
+        size = 50, offset = 0}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.frost.size, 50)
+    assert(arcs.byUnit.nameplate1 and arcs.byUnit.nameplate2, "both plates have arcs again")
+    equal(arcs.byUnit.nameplate2.scale, 0.5)
+    equal(arcs.byUnit.nameplate2.point[5], 0)
+end)
+
+test("frozen and chilled arcs: events only, and no AddOn code reads an aura", function()
+    local text = assert(io.open("Frost.lua", "rb")):read("*a")
+    equal(text:find("\"OnUpdate\"", 1, true), nil, "no OnUpdate")
+    equal(text:find("C_UnitAuras", 1, true), nil)
+    equal(text:find("UnitAura(", 1, true), nil)
+    equal(text:find("UnitDebuff(", 1, true), nil)
+end)
+
 test("Toolkit 2.9.1 or later is used; an unreadable version is let through", function()
     for _, version in ipairs({"2.9.1", "2.9.2", "2.10.0", "3.0.0"}) do
         local state = fixture({loaded = {DyresToolkit = version}})
@@ -873,7 +1191,7 @@ test("/ddt: settings, reset, debug, reset_focus; never in combat for the panel (
     equal(state.said("/ddt opens the settings"), true)
 end)
 
-test("the TOC: optional toolkit, per-character settings, and the three files in order", function()
+test("the TOC: optional toolkit, per-character settings, and the four files in order", function()
     local toc = assert(io.open("DyresDebuffTracker.toc", "rb")):read("*a")
     equal(toc:find("\r", 1, true), nil, "LF only")
     equal(toc:match("## Interface: ([^\n]+)"), "16001, 11509")

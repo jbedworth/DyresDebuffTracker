@@ -193,7 +193,7 @@ DDT.PROFILE_CHARACTER_KEYS = {"macrosOwned"}
 function DDT.ProfileSettings(settings)
     settings = type(settings) == "table" and settings or {}
     local clean = DDT.SanitizeDB({dots = settings.dots, predict = settings.predict, control = settings.control,
-        macrosOwned = settings.macrosOwned}, DDT.classData)
+        frost = settings.frost, macrosOwned = settings.macrosOwned}, DDT.classData)
     local live = type(DDT.db) == "table" and type(DDT.db.dots) == "table" and DDT.db.dots or {}
     for _, slot in ipairs(DDT.classData and DDT.classData.dots or {}) do
         if slot.lastUsed then
@@ -231,6 +231,7 @@ function DDT.ApplyProfile()
         control:Rebuild()
         control:Refresh()
     end
+    DDT.RefreshFrost()
 end
 
 -- Joins the profile, where the Toolkit has one (2.10.0); else nothing changes.
@@ -251,6 +252,17 @@ function DDT.Start()
     DDT.SanitizeDB(DDT.db, DDT.classData)
     -- After the saved settings, before the frames: a waiting part lands now.
     DDT.profileJoined = DDT.RegisterProfile()
+    -- The Mage's frozen and chilled arcs: this AddOn's own, so also while
+    -- a Tools AddOn has the DoTs (no other AddOn draws them).
+    if DDT.class == "MAGE" then
+        local arcs, missing = DDT.CreateFrostArcs(DDT.toolkit, function() return DDT.db.frost end)
+        if arcs then
+            DDT.frostArcs = arcs
+        else
+            DDT.frostMissing = tostring(missing)
+            DDT.Report("The frozen and chilled arcs stay off: this client lacks " .. tostring(missing) .. ".")
+        end
+    end
     if not DDT.classData then
         return
     end
@@ -307,6 +319,12 @@ function DDT.RefreshDots(rebuild)
     end
 end
 
+function DDT.RefreshFrost()
+    if DDT.frostArcs then
+        DDT.frostArcs:Refresh()
+    end
+end
+
 function DDT.RefreshControl()
     if DDT.controlTracker then
         DDT.controlTracker:Refresh()
@@ -341,6 +359,16 @@ function DDT.DebugLines()
                 lines[#lines + 1] = part[1] .. " " .. line
             end
         end
+    end
+    -- The Mage's frozen and chilled arcs (Frost.lua).
+    if DDT.frostArcs then
+        for _, line in ipairs(DDT.frostArcs:DebugLines()) do
+            lines[#lines + 1] = "frost " .. line
+        end
+    elseif DDT.class == "MAGE" then
+        lines[#lines + 1] = "frost off: this client lacks " .. tostring(DDT.frostMissing)
+    else
+        lines[#lines + 1] = "frost none (Mage only)"
     end
     return lines
 end

@@ -25,6 +25,10 @@ Compatibility).
   the mob. The empty places stay, so the DoTs do not move. The target and
   focus rows then do not recast a DoT when you click them. It needs a Dyre's
   Toolkit newer than 2.10.2; with an older one the checkbox does not show.
+- **Show Target panel**, **Show Focus panel**, **Show Others panel** (all on
+  by default): turn off a panel you do not need, for example the Target
+  panel when your target frame already shows your DoTs. It needs a Dyre's
+  Toolkit newer than 2.10.2; with an older one the checkboxes do not show.
 - Optional dots on nameplates: one per DoT, colored while it is up.
 
 ## Damage to come, and DIES
@@ -53,6 +57,23 @@ Compatibility).
   pick on the mob (through `/tm`).
 - **Tell your group**: a party or raid message as you cast, per spell, off
   by default. "Say" is an option.
+
+## Mage: frozen and chilled
+
+- An **arc of ice crystals** above an enemy nameplate while the mob is Frozen:
+  Shatter works on it. Frost Nova (from any Mage) and Frostbite's freeze.
+- A **thin arc of frost and snowflakes** while your own Chill is on the mob: your Frostbite
+  and Fingers of Frost can proc. Frostbolt, Cone of Cold, Improved
+  Blizzard, and the Frost Armor and Ice Armor chill. Another Mage's chill
+  does not count, because it cannot proc your talents. One exception:
+  the game does not name you as the source of the armor chill, so another
+  Mage's armor chill also shows the arc.
+- A mob that is both shows both, Frozen above. The game draws the arcs, so
+  they work in combat.
+- On by default for Mages. "Frozen and chilled" on the DoTs page: on or
+  off, **Arc height** (0 to 60 pixels above the health bar), and **Arc
+  size** (50% to 200%). They sit on the bar of Plater, Threat Plates, and
+  the other nameplate AddOns that Dyre's Toolkit knows.
 
 ## Classes
 

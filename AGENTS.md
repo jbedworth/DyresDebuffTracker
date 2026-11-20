@@ -200,6 +200,17 @@ character knows, at its best rank; none for a spell it does not know.
   unreleased Toolkit; 2.10.2 lacks it); a change calls `Rebuild` (out of
   combat). The Toolkit draws no placeholders, keeps every slot's place, and
   makes no secure slots on the target and focus rows (no recast clicks).
+- Panel switches (a player, 2026-11-19: "Is there a way to disable the
+  target dot window or hide it?"; John: "a 3 panels toggle show/off, default
+  to show. A checkbox is fine for now."): `db.dots.show = {target, focus,
+  list}`, booleans, default true, repaired in SanitizeDB (only false hides;
+  anything else is true); under dots, so in the profile. Three checkboxes on
+  the DoTs page before the Grow dropdowns, "Show Target panel", "Show Focus
+  panel", "Show Others panel", shown only when
+  `DyresToolkit.TRACKER_PANELS` is a table (an unreleased Toolkit; 2.10.2
+  lacks it); a change calls `RefreshDots(false)`, which calls the tracker's
+  `Refresh` (the Toolkit reads `store.show` live). The saved value is kept
+  and repaired either way.
   DDT has no "Panel opacity" setting on its pages (`panelOpacity` is only
   saved, 10 to 100), so its pages do not mention it.
 - Profile (John, 2026-11-17: "start working on the global "all Dyre addons
@@ -210,12 +221,12 @@ character knows, at its best rank; none for a spell it does not know.
   `RegisterProfilePart` (2.10.0); with an older Toolkit nothing changes, and
   `DDT.TOOLKIT_VERSION` is not raised. `current` is DyresDebuffTrackerDB
   (`DDT.db`). Key audit of DyresDebuffTrackerDB:
-  - In the profile: `dots` (enabled, theme, sizes, trackerSize, grow, order,
+  - In the profile: `dots` (enabled, theme, sizes, trackerSize, grow, show, hideEmpty, order,
     health, healthText, position and sections (the panels' places),
     panelOpacity, onPlates, plateDots and its offset and opacity),
     `predict` (every setting, with the DIES places and offsets), and
     `control` (enabled, plateTimers, macros, say, position, scale, markers,
-    announce, texts).
+    announce, texts), and `frost` (the Mage's arcs: enabled, offset, size).
   - `characterKeys` = {"macrosOwned"}: the names of the character macros
     this AddOn keeps (the control tracker's keeper `owned`); macros are per
     character, so another character's list must not land here.
@@ -230,7 +241,7 @@ character knows, at its best rank; none for a spell it does not know.
     profile).
   `DDT.ProfileSettings(settings)`: any table (empty, partial, older, newer,
   another class's) through SanitizeDB with this character's class table;
-  only dots, predict, control, and macrosOwned are kept; never errors.
+  only dots, predict, control, frost, and macrosOwned are kept; never errors.
   `DDT.ApplyProfile` (refresh; the Toolkit writes DDT.db in place and
   applies only out of combat): `ReapplyWidgets` (the control bar's place and
   scale), the DoT tracker's `ResetPosition` (the panels' places),
@@ -239,6 +250,42 @@ character knows, at its best rank; none for a spell it does not know.
   dots; predictor), the plate dots' colors and opacity, and the control
   tracker's `SetScale`, `Rebuild`, and `Refresh` (owner claim, clicks, plate
   timers, macros through the out-of-combat path). Nothing needs a reload.
+- Frozen and chilled arcs, Mage only (John, 2026-11-18: "a frozen/icy arc
+  above the chilled and frozen mobs nameplates (2 different looking
+  visuals, I think a mob can be both frozen and chilled)"; lead's spec the
+  same day). Frost.lua, `DDT.CreateFrostArcs(toolkit, store)`, made in
+  `DDT.Start` for a Mage before the Tools AddOn check (no other AddOn draws
+  them, so also while MTF has the DoTs; never greyed). Each enemy plate gets
+  a holder with one Toolkit `CreateAuraContainer` and three HARMFUL slots
+  whose `includeSpellIDs` are sets (a list matches nothing in client):
+  `frozen`, filter `HARMFUL` (any source: Shatter works on every Frozen
+  target), `chilled`, filter `HARMFUL|PLAYER` (Frostbite and Fingers of
+  Frost proc from "your Chill effects", TFB), and `chilledArmor`, filter
+  `HARMFUL`, for Frost Armor's and Ice Armor's Chilled (6136, 7321), drawn
+  with the chilled arc in the same place (John, 2026-11-19, in client on
+  Forever: a mob had Chilled 6136 and the PLAYER slot showed no arc, while
+  the frozen slot worked; the game seems not to count you as that chill's
+  source; the cost is that another Mage's armor chill shows it too). The engine shows the slots'
+  buttons; the arcs (Textures/FrozenArc.tga, ChilledArc.tga, 256 x 64, made
+  by scripts/make_artwork.py --arcs, our own art) are set up only in
+  `initializeFrame`. No AddOn code reads an aura. As the Toolkit's
+  PlateDots: holders pooled, parented to the plate on NAME_PLATE_UNIT_ADDED
+  (also in combat), given back on NAME_PLATE_UNIT_REMOVED; ten made ahead
+  out of combat (`DDT.FROST_PREWARM`, again at PLAYER_REGEN_ENABLED), and
+  one made in combat only when the pool runs dry, as PlateDots does. Placed
+  on `FindPlateBar`'s bar, else the plate, and again after a `C_Timer.After
+  (0)` (DotPredict's rule for plate AddOns). Shown only on a unit you can
+  attack (UNIT_FLAGS). `db.frost` = {enabled (true), offset (0 to 60, 10),
+  size (50 to 200, 100)}, repaired in SanitizeDB; in the profile (the
+  refresh calls `DDT.RefreshFrost`). The IDs and their sources are in
+  Frost.lua and TESTING.md; no Water Elemental Freeze and no Frostfire Bolt
+  chill (no local source). `/ddt debug` has a `frost` line
+  (`arcs:DebugLines`; John, 2026-11-19, after he saw no arcs in client): on,
+  the engine kind, holders, plates, shown (a mob you can attack), visible
+  (the plate and its parents show too), and anchors (FindPlateBar's adapter
+  per holder, else `plate`). It reads only our own holders, never an aura or
+  an engine button. Not a Mage: `frost none (Mage only)`; a Mage whose
+  client lacks a part: `frost off: this client lacks ...`.
 - Not built yet: the other DoT sizes, panel opacity and colors, DoT order, and
   announcement text editors (the engines read them from the store; the
   defaults are WTF's), and the in-client check.
@@ -284,17 +331,17 @@ character knows, at its best rank; none for a spell it does not know.
 - Install test builds only into
   `C:\Games\WoW\World of Warcraft\_forever_\Interface\AddOns` and
   `_classic_era_\Interface\AddOns` (never `_classic_beta_`), and cmp-check
-  them. Install only the TOC, the Lua files the TOC lists, Textures/Icon.tga,
-  and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
+  them. Install only the TOC, the Lua files the TOC lists, the Textures
+  (Icon.tga, FrozenArc.tga, ChilledArc.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
 
 ## Project structure
 
-- Runtime: DyresDebuffTracker.toc, Core.lua, Engines.lua, Options.lua
-  (loaded in that order), Textures/Icon.tga (the TOC icon, the one runtime
-  texture).
+- Runtime: DyresDebuffTracker.toc, Core.lua, Engines.lua, Frost.lua,
+  Options.lua (loaded in that order), Textures/Icon.tga (the TOC icon), and
+  Textures/FrozenArc.tga and ChilledArc.tga (the Mage's arcs).
 - scripts/make_artwork.py: makes the logo (SVG, rendered to PNG with headless
-  Chrome as the family's logos are), Textures/Icon.tga, and the listing
-  screenshot crops. Change the art there, not in its outputs; see
+  Chrome as the family's logos are), Textures/Icon.tga, the arcs
+  (`--arcs`, plain Python), and the listing screenshot crops. Change the art there, not in its outputs; see
   artwork/README.md.
 - docs/CURSEFORGE_LISTING.md: the listing text; artwork/: the logo, John's
   raw screenshots, and the crops.

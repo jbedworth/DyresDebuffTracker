@@ -148,13 +148,35 @@ local function Status(layout, kind, none)
 end
 
 local function Dots() return DDT.db.dots end
+local function Frost() return DDT.db.frost end
 local function Predict() return DDT.db.predict end
 local function Control() return DDT.db.control end
+
+-- The Mage's frozen and chilled arcs (Frost.lua; John, 2026-11-18). This
+-- AddOn's own: never greyed for a Tools AddOn, which has none.
+local function FrostSection(category, layout)
+    if DDT.class ~= "MAGE" or not DDT.frostArcs then
+        return
+    end
+    Heading(layout, "Frozen and chilled")
+    local master = Flag(category, "DDT_FROST", "Show frozen and chilled arcs", Frost, "enabled", true,
+        "Above each enemy nameplate: an arc of ice crystals while the mob is Frozen (Shatter works on it), and a "
+            .. "thin arc of frost and snowflakes while your Chill is on it (Frostbite and Fingers of Frost can proc). A mob that is both "
+            .. "shows both, Frozen above.", DDT.RefreshFrost)
+    local function On() return DDT.db.frost.enabled end
+    local offset, size = DDT.FROST_OFFSET, DDT.FROST_SIZE
+    Nest(Slider(category, "DDT_FROST_OFFSET", "Arc height", Frost, "offset", offset.default, offset.min, offset.max,
+        "How far above the nameplate's health bar the arcs sit, in pixels: " .. offset.min .. " to " .. offset.max
+            .. ".", DDT.RefreshFrost), master, On)
+    Nest(Slider(category, "DDT_FROST_SIZE", "Arc size", Frost, "size", size.default, size.min, size.max,
+        "The arcs' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshFrost), master, On)
+end
 
 local function DotsPage(parent)
     local category, layout = Settings.RegisterVerticalLayoutSubcategory(parent, "DoTs")
     DDT.dotsCategory = category
     if not Status(layout, "dots", NO_DOTS) then
+        FrostSection(category, layout)
         return
     end
     local function Changed() DDT.RefreshDots(false) end
@@ -176,6 +198,19 @@ local function DotsPage(parent)
         Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_HIDE_EMPTY", "Hide empty DoT slots", Dots, "hideEmpty", false,
             "Show a DoT only while it is on the mob. The empty places stay, so the DoTs do not move. The target "
                 .. "and focus rows then do not recast a DoT when you click them.", Rebuilt), "dots"), master, On)
+    end
+    -- Show or hide each panel (a player, 2026-11-19: "Is there a way to
+    -- disable the target dot window or hide it?"; John: "a 3 panels toggle
+    -- show/off, default to show. A checkbox is fine for now."): only with a
+    -- Toolkit that has it (TRACKER_PANELS). The tracker reads it live.
+    if DDT.toolkit and type(DDT.toolkit.TRACKER_PANELS) == "table" then
+        local function Show() return DDT.db.dots.show end
+        for _, panel in ipairs({{"target", "Target"}, {"focus", "Focus"}, {"list", "Others"}}) do
+            Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_SHOW_" .. panel[1]:upper(), "Show " .. panel[2] .. " panel",
+                Show, panel[1], true, panel[1] == "list"
+                    and "The panel for the other mobs you DoT. Your target and focus stay out of it."
+                    or "The panel for your " .. panel[1] .. "'s DoTs.", Changed), "dots"), master, On)
+        end
     end
     -- Grow direction per panel: only with a Toolkit that has it (TRACKER_GROW).
     if DDT.toolkit and type(DDT.toolkit.TRACKER_GROW) == "table" then
@@ -233,6 +268,7 @@ local function DotsPage(parent)
                     .. " down or up.", Changed), "dots"), predict, on)
         end
     end
+    FrostSection(category, layout)
 end
 
 local function ControlPage(parent)

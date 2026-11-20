@@ -254,10 +254,15 @@ function DDT.SanitizeDB(db, classData)
         trackerSize = dots.trackerSize, grow = {},
         -- Toolkit TRACKER_HIDE_EMPTY (treadpool, 2026-11-17; John: "Yes, build it").
         hideEmpty = Bool(dots.hideEmpty, false),
+        -- Toolkit TRACKER_PANELS (a player, 2026-11-19; John: "a 3 panels
+        -- toggle show/off, default to show"): only false hides a panel.
+        show = {},
     }
     DDT.ApplyTrackerSize(clean)
     local grow = type(dots.grow) == "table" and dots.grow or {}
+    local show = type(dots.show) == "table" and dots.show or {}
     for _, key in ipairs(DDT.PANELS) do
+        clean.show[key] = show[key] ~= false
         clean.grow[key] = Choice(grow[key], DDT.GROW, "down")
         clean.sections[key] = Place(sections[key])
         clean.panelOpacity[key] = Whole(panelOpacity[key], 10, 100, 100)
@@ -306,6 +311,11 @@ function DDT.SanitizeDB(db, classData)
         cleanControl.texts[spell.key] = Text(texts[spell.key], DDT.DefaultAnnounceText(spell))
     end
     db.control = cleanControl
+    -- The Mage's frozen and chilled arcs (Frost.lua); kept for every class, used by Mages.
+    local frost = type(db.frost) == "table" and db.frost or {}
+    db.frost = {enabled = Bool(frost.enabled, true),
+        offset = Whole(frost.offset, DDT.FROST_OFFSET.min, DDT.FROST_OFFSET.max, DDT.FROST_OFFSET.default),
+        size = Whole(frost.size, DDT.FROST_SIZE.min, DDT.FROST_SIZE.max, DDT.FROST_SIZE.default)}
     -- The character macros this AddOn keeps (the toolkit's keeper), by name.
     local owned = type(db.macrosOwned) == "table" and db.macrosOwned or {}
     db.macrosOwned = {}

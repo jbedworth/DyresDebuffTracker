@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.3.0
+
+### Features
+
+- Mage: frozen and chilled arcs above enemy nameplates, on by default. An
+  arc of ice crystals shows while the mob is Frozen, so Shatter works on it (Frost
+  Nova from any Mage, and Frostbite's freeze). A thin arc of frost and snowflakes shows
+  while your own Chill is on it, so Frostbite and Fingers of Frost can proc
+  (Frostbolt, Cone of Cold, Improved Blizzard, and the Frost Armor and Ice
+  Armor chill). A mob that is both shows both, Frozen above. The game draws
+  them, so they work in combat. Turn them off, or set their height and
+  size, under "Frozen and chilled" on the DoTs page. They follow Plater,
+  Threat Plates, and the other nameplate AddOns.
+- Show or hide each DoT panel: three new checkboxes on the DoTs page, "Show
+  Target panel", "Show Focus panel", and "Show Others panel" (all on by
+  default). Turn off the Target panel if your target frame already shows
+  your DoTs, and keep Focus and Others. A change applies at once. It needs a
+  Dyre's Toolkit with this option (newer than 2.10.2); with an older one the
+  checkboxes do not show.
+
 ## 1.2.0
 
 ### Features

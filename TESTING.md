@@ -17,6 +17,63 @@ checks in the client. Mock tests do not prove in-client behavior.
   trap, and no-base-damage cases.
 - `luac5.1 -p` on every Lua file.
 
+## In-client checks: frozen and chilled arcs (Mage)
+
+The IDs come from local sources only (Frost.lua names them):
+TalentsForeverBook's Data.lua (Forever beta 1.60.1.70755) for the ranks, and
+LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
+
+- [ ] Frozen (any Mage, filter `HARMFUL`): Frost Nova 122, 865, 6131, 10230;
+      Frostbite's freeze 12494. On Forever, check that Frostbite's freeze
+      still has ID 12494.
+- [ ] Chilled (yours only, filter `HARMFUL|PLAYER`): Frostbolt 116, 205,
+      837, 7322, 8406, 8407, 8408, 10179, 10180, 10181, 25304; Cone of Cold
+      120, 8492, 10159, 10160, 10161; Improved Blizzard 12484, 12485, 12486.
+      Does Frostbolt's slow on Forever show the frost arc? If not, note the
+      debuff's name and ID (its tooltip on a nameplate AddOn's icon).
+- [ ] Armor chill (any source, filter `HARMFUL`, its own slot): Frost Armor
+      and Ice Armor "Chilled" 6136, 7321. Seen on Forever (2026-11-19): 6136
+      showed on a mob and the `HARMFUL|PLAYER` slot drew nothing. Let a mob
+      hit you with Frost Armor up: the frost arc shows.
+- [ ] Not in the lists, for want of a local source: the Water Elemental's
+      Freeze (if Forever has one), a Frostfire Bolt chill (does its debuff,
+      401502, 1237312, 1237313, slow the mob?), and Forever's own Frostbolt
+      ranks or a Frostbolt debuff with a new ID. Note any ID you see on a
+      frozen or chilled mob that is not above.
+- [ ] First, with enemy nameplates on and a mob in view: `/ddt debug`. The
+      `frost` line shows `on=true`, `plates` at least 1, `shown` for each mob
+      you can attack, `visible` the same as `shown`, and in `anchors` the
+      nameplate AddOn you use (for example `EllesmereUI=1`), else `plate`.
+      `visible` under `shown` means a nameplate AddOn hides the Blizzard
+      plate the arcs sit on. `frost off: this client lacks ...` names what is
+      missing.
+- [ ] Out of combat and in combat, on Forever and on Era: Frostbolt a mob,
+      then Frost Nova it. The frost arc shows, and the ice-crystal arc shows above
+      it. Each goes when its debuff ends. No Lua error.
+- [ ] Another Mage's Frost Nova shows the ice-crystal arc; another Mage's
+      Frostbolt does not show the frost arc.
+- [ ] Pull more than ten mobs in combat: every hostile plate gets its arcs.
+      Friendly plates get none.
+- [ ] With Plater, Threat Plates, Platynator, or EllesmereUI: the arcs sit just above
+      their health bar. With Blizzard's plates: above Blizzard's bar.
+- [ ] "Arc height", "Arc size", and the switch apply at once. A Warlock or
+      other class has no "Frozen and chilled" rows.
+
+## In-client checks: panel switches
+
+- [ ] With the Toolkit's panel change: the DoTs page shows "Show Target
+      panel", "Show Focus panel", and "Show Others panel", all on. DoT your
+      target, your focus, and a third mob. Turn off the Target panel: it
+      goes at once, and Focus and Others stay. Do the same for Focus and
+      Others. Turn each on again: it comes back. Also with the frames
+      unlocked (samples): a panel that is off does not show.
+- [ ] Turn off a panel in combat: no Lua error; it hides when combat ends
+      at the latest.
+- [ ] The switches follow the Toolkit profile (Copy settings from, Export
+      and Import).
+- [ ] With Dyre's Toolkit 2.10.2: the checkboxes do not show, and all three
+      panels work as before.
+
 ## In-client checks: Hide empty DoT slots
 
 - [ ] With the Toolkit's hide-empty change: turn on "Hide empty DoT slots"

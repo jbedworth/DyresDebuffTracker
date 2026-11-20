@@ -24,8 +24,19 @@ python scripts/make_artwork.py --logo
 
 `Textures/Icon.tga` (64 x 64, uncompressed 32-bit BGRA, top-left origin): the
 dial and skull without the frame, rendered at 512 and averaged down. The TOC
-uses it as `## IconTexture`; it is the one runtime texture.
+uses it as `## IconTexture`.
 `python scripts/make_artwork.py --icon` makes it again.
+
+## The Mage's arcs
+
+`Textures/FrozenArc.tga` and `Textures/ChilledArc.tga` (256 x 64, the same
+format), drawn as SVG and rendered with headless Chrome by `python
+scripts/make_artwork.py --arcs` (on black and on white, for the alpha; fixed
+seeds). Frozen is a cracked crust of ice with faceted crystal shards, tallest
+in the middle, a soft blue glow, and sparkles (John, 2026-11-18: "actually
+look frozen"). Chilled is a thin band of frost mist with rime needles and
+six snowflakes, paler and lighter than Frozen. Both curve up over the
+nameplate. Our own art; nothing is copied from another AddOn.
 
 ## Screenshots
 
@@ -56,4 +67,4 @@ running into Threat Plates' target-of-target text ("DIESJuk'taz ]"), fixed in
 Dyre's Toolkit 2.4.0. Take that shot again with 2.4.0 before using it.
 
 This artwork is covered by the MIT License. Copyright (c) 2026 John Bedworth.
-It never enters the runtime package (except Textures/Icon.tga).
+It never enters the runtime package (except the Textures above).

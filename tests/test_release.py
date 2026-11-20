@@ -244,6 +244,15 @@ class ReleaseTests(unittest.TestCase):
         icon = (bytes((0, 0, 2)) + bytes(9) + (64).to_bytes(2, "little")
                 + (64).to_bytes(2, "little") + bytes((32, 0x28)) + bytes(64 * 64 * 4))
         builder._validate_tga("icon.tga", icon)
+        # Power-of-two sides need not be equal (the arcs are 256 x 64); 48 is not one.
+        for height, ok in ((32, True), (48, False)):
+            arc = (bytes((0, 0, 2)) + bytes(9) + (128).to_bytes(2, "little")
+                   + height.to_bytes(2, "little") + bytes((32, 0x28)) + bytes(128 * height * 4))
+            if ok:
+                builder._validate_tga("arc.tga", arc)
+            else:
+                with self.assertRaises(ValueError):
+                    builder._validate_tga("arc.tga", arc)
 
         def variant(offset, value):
             changed = bytearray(icon)
@@ -258,11 +267,15 @@ class ReleaseTests(unittest.TestCase):
                 builder._validate_tga("icon.tga", data)
 
     def test_package_ships_the_icon(self):
-        self.assertEqual(builder.MEDIA_FILES, ("Textures/Icon.tga",))
-        builder._validate_tga("Icon.tga", (ROOT / "Textures" / "Icon.tga").read_bytes())
+        # The icon, and the Mage's frozen and chilled arcs (256 x 64).
+        self.assertEqual(builder.MEDIA_FILES,
+                         ("Textures/Icon.tga", "Textures/FrozenArc.tga", "Textures/ChilledArc.tga"))
+        for name in builder.MEDIA_FILES:
+            builder._validate_tga(name, (ROOT / name).read_bytes())
         path, _ = self.build()
         with zipfile.ZipFile(path) as archive:
-            self.assertIn("DyresDebuffTracker/Textures/Icon.tga", archive.namelist())
+            for name in builder.MEDIA_FILES:
+                self.assertIn("DyresDebuffTracker/" + name, archive.namelist())
             self.assertFalse(any("/Sounds/" in name for name in archive.namelist()),
                              "DDT ships no sounds")
             self.assertFalse(any("artwork/" in name or "scripts/" in name or "docs/" in name
