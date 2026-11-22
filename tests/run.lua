@@ -90,7 +90,31 @@ local function newFrame(state, kind, name, parent, template)
         function text:GetFont() return "Fonts\\FRIZQT__.TTF", 10, "" end
         return text
     end
-    function frame:CreateTexture() return stub() end
+    -- Textures and their pulses are kept, so a test can see what a frame draws.
+    frame.textures = {}
+    function frame:CreateTexture(_, layer)
+        local texture = stub({layer = layer, groups = {}})
+        function texture:SetTexture(path) self.path = path end
+        function texture:SetBlendMode(mode) self.blend = mode end
+        function texture:SetSize(width, height) self.width, self.height = width, height end
+        function texture:CreateAnimationGroup()
+            local group = stub({animations = {}})
+            function group:CreateAnimation(kind)
+                local animation = stub({kind = kind})
+                function animation:SetFromAlpha(value) self.from = value end
+                function animation:SetToAlpha(value) self.to = value end
+                function animation:SetDuration(value) self.duration = value end
+                self.animations[#self.animations + 1] = animation
+                return animation
+            end
+            function group:SetLooping(looping) self.looping = looping end
+            function group:Play() self.playing = true end
+            self.groups[#self.groups + 1] = group
+            return group
+        end
+        self.textures[#self.textures + 1] = texture
+        return texture
+    end
     function frame:CreateMaskTexture() return stub() end
     state.frames[#state.frames + 1] = frame
     if name then
@@ -164,7 +188,9 @@ local function fixture(options)
     env.GameTooltip = stub()
     env.Enum = {SpellBookItemType = {Spell = 1, FutureSpell = 2}, SpellBookSpellBank = {Player = 0, Pet = 1},
         StatusBarTimerDirection = {RemainingTime = 1}}
-    env.C_Spell = {GetSpellName = function(id) return SPELLS[id] end, GetSpellTexture = function() return 1 end}
+    -- options.spells: more spells this client knows (Forever's Demonic Brand).
+    env.C_Spell = {GetSpellName = function(id) return SPELLS[id] or (options.spells or {})[id] end,
+        GetSpellTexture = function() return 1 end}
     local book = options.book or {{172, "Corruption"}, {348, "Immolate"}, {5782, "Fear"}, {710, "Banish"}}
     local known = {}
     for _, item in ipairs(book) do known[item[1]] = true end
@@ -229,7 +255,7 @@ local function fixture(options)
     local function Initializer(setting)
         return {setting = setting, AddModifyPredicate = function(self, predicate) self.modify = predicate end,
             AddShownPredicate = function(self, predicate) self.shown = predicate end,
-            SetParentInitializer = function() end}
+            SetParentInitializer = function() end, InitFrame = function() end}
     end
     if not options.noSettings then
         env.Settings = {
@@ -252,12 +278,22 @@ local function fixture(options)
             CreateControlTextContainer = function()
                 return {Add = function() end, GetData = function() return {} end}
             end,
-            CreateSlider = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
-            CreateSliderOptions = function() return {} end,
+            CreateSlider = function(_, setting, options)
+                setting.labelFormatter = type(options) == "table" and options.labelFormatter or nil
+                setting.sliderOptions = options
+                setting.initializer = Initializer(setting)
+                return setting.initializer
+            end,
+            CreateSliderOptions = function(min, max, step)
+                local options = {min = min, max = max, step = step}
+                function options:SetLabelFormatter(_, formatter) self.labelFormatter = formatter end
+                return options
+            end,
             CreateColorSwatch = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
             OpenToCategory = function(id) state.opened = id end,
         }
         env.CreateSettingsListSectionHeaderInitializer = function(text) return {text = text} end
+        env.MinimalSliderWithSteppersMixin = {Label = {Right = 1}}
         state.buttons = {}
         env.CreateSettingsButtonInitializer = function(name, text, onClick)
             state.buttons[name .. ": " .. text] = onClick
@@ -1817,6 +1853,338 @@ test("frozen and chilled arcs: events only, and no AddOn code reads an aura", fu
     equal(text:find("C_UnitAuras", 1, true), nil)
     equal(text:find("UnitAura(", 1, true), nil)
     equal(text:find("UnitDebuff(", 1, true), nil)
+end)
+
+-- The Warlock's Demonic Brand pentagram (John, via the lead, 2026-11-21:
+-- "Demonic Brand (for Demonology Warlocks): we need to add it. It's a debuff
+-- on your current target"; then "Make it a glowing red pentagram that renders
+-- above the nameplate, and make it so the size and height can be adjusted").
+local BRAND = {[1293696] = "Demonic Brand"}
+
+local function Branded(extra)
+    local options = {spells = BRAND}
+    for key, value in pairs(extra or {}) do options[key] = value end
+    return fixture(options)
+end
+
+local function ReadTGA(name)
+    local data = assert(io.open("Textures/" .. name .. ".tga", "rb")):read("*a")
+    return data, data:byte(13) + data:byte(14) * 256, data:byte(15) + data:byte(16) * 256
+end
+
+test("Demonic Brand pentagram: Warlocks where the client knows it; Show, Size, Height, Reset; repaired", function()
+    local state = Branded()
+    assert(state.ddt.brandArcs, "a Warlock on Forever has it")
+    local s = state.settings
+    equal(s.DDT_BRAND.name, "Show")
+    equal(s.DDT_BRAND.category, "DoTs")
+    equal(s.DDT_BRAND.default, true)
+    equal(state.ddt.db.brand.enabled, true, "on by default")
+    equal(s.DDT_BRAND_SIZE.name, "Size")
+    equal(s.DDT_BRAND_SIZE.default, 100)
+    equal(s.DDT_BRAND_OFFSET.name, "Height above nameplate")
+    equal(s.DDT_BRAND_OFFSET.default, 10)
+    -- Both sliders show their number.
+    assert(s.DDT_BRAND_SIZE.labelFormatter and s.DDT_BRAND_OFFSET.labelFormatter, "label formatters")
+    equal(s.DDT_BRAND_SIZE.labelFormatter(s.DDT_BRAND_SIZE.get()), "100%")
+    equal(s.DDT_BRAND_OFFSET.labelFormatter(s.DDT_BRAND_OFFSET.get()), "10")
+    assert(state.buttons["Demonic Brand: Reset Demonic Brand"], "the Reset button")
+    -- Its own heading, last on the DoTs page, where Mages see "Frozen and chilled".
+    local last
+    for index, heading in ipairs(state.headings) do
+        if heading:find("^DoTs: ") and not heading:find("[", 1, true) then last = index end
+    end
+    equal(state.headings[last], "DoTs: Demonic Brand", "the DoTs page's last heading")
+    equal(#state.messages, 0)
+    -- Every Warlock: no talent or spec is read.
+    assert(Branded({book = {{172, "Corruption"}}}).ddt.brandArcs, "a Warlock without Searing Pain too")
+    -- A client that does not know the debuff (Classic Era): nothing, quietly.
+    local era = fixture()
+    equal(era.ddt.brandArcs, nil)
+    equal(era.settings.DDT_BRAND, nil)
+    equal(era.heading("Demonic Brand"), nil)
+    equal(#era.messages, 0, "quiet on Classic Era")
+    era.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(era.said("brand off: this client lacks Demonic Brand (1293696)"), true)
+    -- Other classes: none, also on Forever.
+    local mage = Mage({spells = BRAND})
+    equal(mage.ddt.brandArcs, nil, "none for a Mage")
+    equal(mage.settings.DDT_BRAND, nil)
+    mage.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(mage.said("brand none (Warlock only)"), true)
+    -- Repaired.
+    local bad = Branded({saved = {brand = {enabled = "yes", offset = -5, size = 999}}}).ddt.db.brand
+    equal(bad.enabled, true, "not a boolean: on")
+    equal(bad.offset, 0, "at least 0")
+    equal(bad.size, 200, "at most 200")
+    local good = Branded({saved = {brand = {enabled = false, offset = 60, size = 50}}}).ddt.db.brand
+    equal(good.enabled, false)
+    equal(good.offset, 60)
+    equal(good.size, 50)
+    -- The art: 128 x 128, uncompressed BGRA, top-left origin; the old arc is gone.
+    for _, name in ipairs({"BrandPentagram", "BrandGlow"}) do
+        local data, width, height = ReadTGA(name)
+        equal(#data, 18 + 128 * 128 * 4, name)
+        equal(width, 128, name)
+        equal(height, 128, name)
+        equal(data:byte(18), 0x28, name)
+    end
+    equal(io.open("Textures/BrandArc.tga", "rb"), nil, "no fel arc any more")
+    -- Red: the pentagram's brightest pixels are red, and the glow's middle is red.
+    local data = ReadTGA("BrandGlow")
+    local middle = 18 + (64 * 128 + 64) * 4
+    local b, g, r = data:byte(middle + 1), data:byte(middle + 2), data:byte(middle + 3)
+    assert(r > 200 and g < 128 and b < 64, "the glow is red")
+end)
+
+test("Demonic Brand pentagram on Forever: one HARMFUL|PLAYER slot of 1293696, a glow that pulses, nothing read", function()
+    local state = Branded({engine = true})
+    local arcs = state.ddt.brandArcs
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "holders made ahead, out of combat")
+    state.combat = true
+    local plate = AddPlate(state, "nameplate1")
+    local holder = arcs.byUnit.nameplate1
+    assert(holder, "the plate got a holder")
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "from the pool: none made in combat")
+    equal(holder.parent, plate)
+    equal(holder.point[2], plate.UnitFrame.healthBar, "on the bar FindPlateBar finds")
+    equal(holder.point[1], "BOTTOM")
+    equal(holder.point[3], "TOP", "above the plate's bar")
+    equal(holder.point[5], 10, "10 pixels above the bar")
+    equal(holder.width, 48)
+    equal(holder.height, 48)
+    equal(holder.shown, true, "a hostile mob")
+    local container = holder.container
+    equal(container.kind, "AuraContainer", "the engine's container")
+    equal(#container.slots, 1, "the brand only")
+    local slot = SlotBy(container, "brand")
+    equal(slot.filter, "HARMFUL|PLAYER", "only your own Brand: only your demon uses it")
+    local ids = slot.options.candidateFilters.includeSpellIDs
+    equal(ids[1], nil, "a set, not a list")
+    equal(ids[1293696], true, "the debuff")
+    equal(ids[1293695], nil, "not the hidden talent passive")
+    -- The engine's button draws the glow behind the star; the glow pulses with an AnimationGroup.
+    local button = slot.button
+    equal(holder.arcs.brand, button)
+    equal(button.width, 48)
+    local glow, star = button.textures[1], button.textures[2]
+    contains(glow.path, "BrandGlow")
+    equal(glow.layer, "BACKGROUND")
+    equal(glow.blend, "ADD")
+    contains(star.path, "BrandPentagram")
+    equal(star.layer, "ARTWORK")
+    equal(star.width, 28)
+    local pulse = glow.groups[1]
+    assert(pulse, "an AnimationGroup")
+    equal(pulse.looping, "BOUNCE")
+    equal(pulse.playing, true)
+    equal(pulse.animations[1].kind, "Alpha")
+    equal(pulse.animations[1].from, 0.45)
+    equal(pulse.animations[1].to, 1)
+    AddPlate(state, "nameplate2", false)
+    equal(arcs.byUnit.nameplate2.shown, false, "a friendly unit: hidden")
+    -- The plate goes: the holder lets go, hides, and goes back to the pool.
+    RemovePlate(state, "nameplate1")
+    equal(holder.container.unit, "none")
+    equal(holder.shown, false)
+    equal(holder.parent, state.env.UIParent)
+    equal(arcs.byUnit.nameplate1, nil)
+    equal(state.auraReads, 0, "no AddOn code reads an aura")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("brand on=true engine=engine holders=10 plates=1 shown=0 visible=0 anchors=[Blizzard=1]"), true)
+    equal(state.said("frost none (Mage only)"), true)
+    -- No OnUpdate anywhere: the pulse is the client's animation.
+    local text = assert(io.open("Frost.lua", "rb")):read("*a")
+    equal(text:find("OnUpdate\"", 1, true), nil)
+end)
+
+test("Demonic Brand pentagram on a plain-Lua container: your Brand shows, another Warlock's does not", function()
+    -- unit -> {{spellId, yours}}
+    local auras = {nameplate1 = {{1293696, true}}}
+    local function Read(unit, index, filter)
+        local n = 0
+        for _, aura in ipairs(auras[unit] or {}) do
+            if aura[2] or not filter:find("PLAYER", 1, true) then
+                n = n + 1
+                if n == index then
+                    return {spellId = aura[1], name = "x", icon = 1, duration = 10, expirationTime = 110}
+                end
+            end
+        end
+    end
+    local state = Branded({auras = Read})
+    AddPlate(state, "nameplate1")
+    local holder = state.ddt.brandArcs.byUnit.nameplate1
+    equal(holder.container.kind, "Frame", "the plain-Lua container")
+    equal(holder.arcs.brand.shown, true, "your Brand")
+    auras.nameplate1 = {{1293696, false}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(holder.arcs.brand.shown, false, "another Warlock's Brand helps only their demon")
+    auras.nameplate1 = {{1293695, true}, {5676, true}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(holder.arcs.brand.shown, false, "the talent and Searing Pain are not the Brand")
+end)
+
+test("Demonic Brand pentagram: Show, Size, Height, and Reset apply at once; the profile carries them", function()
+    local state = Branded({engine = true})
+    local arcs, db = state.ddt.brandArcs, state.ddt.db
+    AddPlate(state, "nameplate1")
+    state.settings.DDT_BRAND_SIZE.set(200)
+    state.settings.DDT_BRAND_OFFSET.set(30)
+    local holder = arcs.byUnit.nameplate1
+    equal(holder.scale, 2)
+    equal(holder.point[5], 15, "30 pixels at scale 2")
+    state.settings.DDT_BRAND.set(false)
+    equal(arcs.byUnit.nameplate1, nil, "off: none")
+    AddPlate(state, "nameplate2")
+    equal(arcs.byUnit.nameplate2, nil, "off: a new plate gets none")
+    -- Reset: on, 100%, 10 pixels, on every plate at once; the same table.
+    local brand = db.brand
+    state.buttons["Demonic Brand: Reset Demonic Brand"]()
+    equal(db.brand, brand, "changed in place")
+    equal(db.brand.enabled, true)
+    equal(db.brand.size, 100)
+    equal(db.brand.offset, 10)
+    equal(state.settings.DDT_BRAND_SIZE.get(), 100, "the slider reads it")
+    assert(arcs.byUnit.nameplate1 and arcs.byUnit.nameplate2, "both plates have it again")
+    equal(arcs.byUnit.nameplate1.scale, 1)
+    equal(arcs.byUnit.nameplate1.point[5], 10)
+    -- A profile copy.
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Warlock", parts = {DyresDebuffTracker = {brand = {enabled = true,
+        size = 50, offset = 0}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.brand.size, 50)
+    equal(arcs.byUnit.nameplate2.scale, 0.5)
+    equal(arcs.byUnit.nameplate2.point[5], 0)
+    -- In the profile's data: an export of this character holds it.
+    local part = state.ddt.ProfileSettings(db)
+    equal(part.brand.size, 50)
+    -- The Mage's arcs keep their own settings.
+    equal(db.frost.size, 100)
+end)
+
+-- The lead, 2026-11-21: John's Warlock cannot apply Demonic Brand, so a
+-- "Preview" button (and /ddt preview brand) shows the pentagram on the
+-- target's nameplate with no debuff, to tune Size and Height live.
+test("Demonic Brand preview: on the target's plate with no debuff, live, and it ends as it should", function()
+    local state = Branded({engine = true, book = {{172, "Corruption"}}})
+    local arcs, press = state.ddt.brandArcs, state.buttons["Demonic Brand: Preview"]
+    assert(press, "the Preview button")
+    -- No target plate: a message, nothing shown.
+    equal(press(), "no plate")
+    contains(state.messages[#state.messages], "target a mob with its nameplate showing")
+    equal(arcs:Previewing(), false)
+    -- A target with a plate, in combat: shown on its bar, our own frame.
+    local plate = AddPlate(state, "nameplate1")
+    state.plates.target = plate
+    state.combat = true
+    equal(press(), "started")
+    contains(state.messages[#state.messages], "Press Preview again, or change target")
+    local on, frame = arcs:Previewing()
+    equal(on, true)
+    equal(frame.shown, true)
+    equal(frame.parent, plate)
+    equal(frame.point[2], plate.UnitFrame.healthBar, "on the bar FindPlateBar finds")
+    equal(frame.point[5], 10, "the Height setting")
+    equal(frame.width, 48)
+    local button = frame.arcs.brand
+    contains(button.textures[1].path, "BrandGlow")
+    contains(button.textures[2].path, "BrandPentagram")
+    equal(button.textures[1].groups[1].playing, true, "the glow pulses")
+    equal(state.auraReads, 0, "no aura read")
+    for _, holder in ipairs(arcs.all) do
+        assert(holder ~= frame, "not an engine holder")
+    end
+    -- Size and Height apply to it at once; it stays while Show is off.
+    state.settings.DDT_BRAND_SIZE.set(200)
+    state.settings.DDT_BRAND_OFFSET.set(40)
+    equal(frame.scale, 2)
+    equal(frame.point[5], 20, "40 pixels at scale 2")
+    state.settings.DDT_BRAND.set(false)
+    equal(frame.shown, true, "for tuning, also while Show is off")
+    state.buttons["Demonic Brand: Reset Demonic Brand"]()
+    equal(frame.scale, 1)
+    equal(frame.point[5], 10)
+    -- A second press ends it.
+    equal(press(), "stopped")
+    equal(frame.shown, false)
+    equal(frame.parent, state.env.UIParent)
+    equal(arcs:Previewing(), false)
+    -- A new target ends it; so does logout; so does the plate going.
+    for _, event in ipairs({"PLAYER_TARGET_CHANGED", "PLAYER_LOGOUT"}) do
+        equal(press(), "started")
+        emit(state, event)
+        equal(arcs:Previewing(), false, event)
+        equal(frame.shown, false, event)
+    end
+    equal(press(), "started")
+    AddPlate(state, "nameplate2")
+    RemovePlate(state, "nameplate2")
+    equal(arcs:Previewing(), true, "another plate going: kept")
+    RemovePlate(state, "nameplate1")
+    equal(arcs:Previewing(), false, "its plate going: ended")
+    -- The slash command toggles it too.
+    plate = AddPlate(state, "nameplate3")
+    state.plates.target = plate
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("preview brand")
+    equal(arcs:Previewing(), true, "/ddt preview brand")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("preview")
+    equal(arcs:Previewing(), false, "/ddt preview")
+    equal(state.auraReads, 0)
+    -- Not a Warlock, or no Demonic Brand in the client: a message only.
+    local era = fixture()
+    era.env.SlashCmdList.DYRESDEBUFFTRACKER("preview brand")
+    contains(era.messages[#era.messages], "this client has no Demonic Brand")
+    local mage = Mage({spells = BRAND})
+    mage.env.SlashCmdList.DYRESDEBUFFTRACKER("preview brand")
+    contains(mage.messages[#mage.messages], "Warlocks only")
+    -- The help names it.
+    era.env.SlashCmdList.DYRESDEBUFFTRACKER("help")
+    contains(era.messages[#era.messages], "/ddt preview brand")
+end)
+
+-- John, 2026-11-21: "set notches on the sliders default values". Every
+-- slider gets the Toolkit's gold default mark (AddDefaultTick) at its real
+-- default, inside its real range: each page, both panel layouts, the Mage's
+-- arcs, the Warlock's Brand.
+test("Default marks: every slider gets the gold mark at its own default", function()
+    local seen, count = {}, 0
+    local function Check(state, label)
+        local sliders = 0
+        for variable, setting in pairs(state.settings) do
+            if setting.sliderOptions then
+                sliders = sliders + 1
+                local mark = setting.initializer.dyreDefault
+                assert(type(mark) == "table", label .. ": no default mark on " .. variable)
+                equal(mark.default, setting.default, label .. " " .. variable .. " default")
+                equal(mark.min, setting.sliderOptions.min, label .. " " .. variable .. " min")
+                equal(mark.max, setting.sliderOptions.max, label .. " " .. variable .. " max")
+                assert(mark.default >= mark.min and mark.default <= mark.max, variable .. " in range")
+                if not seen[variable] then seen[variable] = true; count = count + 1 end
+            end
+        end
+        assert(sliders > 0, label .. ": some sliders")
+    end
+    Check(fixture({before = function(st)
+        st.toolkit.TRACKER_PANEL_OPTIONS = st.toolkit.TRACKER_PANEL_OPTIONS or {"health"}
+        st.toolkit.TRACKER_OUTLINE = st.toolkit.TRACKER_OUTLINE or {min = 0, max = 20, default = 3}
+    end}), "per panel")
+    Check(fixture({oldPanels = true, before = function(st)
+        st.toolkit.TRACKER_OUTLINE = st.toolkit.TRACKER_OUTLINE or {min = 0, max = 20, default = 3}
+    end}), "tracker-wide")
+    Check(Mage(), "Mage")
+    Check(Branded(), "Brand")
+    -- The rows named in the request, and their real defaults.
+    for variable, default in pairs({DDT_PANEL_TARGET_BARS_BARWIDTH = 290, DDT_PANEL_LIST_COMPACT_ICONSIZE = 22,
+            DDT_DOTS_BARS_LINEHEIGHT = 16, DDT_DOTS_COMPACT_NAMEWIDTH = 110, DDT_DOTS_BARS_TEXTSCALE = 100,
+            DDT_PANEL_TARGET_OUTLINE = 3, DDT_DOTS_OUTLINE = 3, DDT_DOTS_PANEL_OPACITY_TARGET = 100,
+            DDT_DOTS_TRACKER_SIZE = 100, DDT_PANEL_FOCUS_TRACKER_SIZE = 100, DDT_PREDICT_OPACITY = 70,
+            DDT_PREDICT_DIES_X = 0, DDT_FROST_OFFSET = 10, DDT_FROST_SIZE = 100, DDT_BRAND_SIZE = 100,
+            DDT_BRAND_OFFSET = 10}) do
+        assert(seen[variable], "checked " .. variable)
+    end
+    assert(count >= 30, "sliders checked: " .. count)
 end)
 
 test("Toolkit 2.9.1 or later is used; an unreadable version is let through", function()

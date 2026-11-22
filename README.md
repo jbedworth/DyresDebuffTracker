@@ -115,6 +115,26 @@ over, your bar's settings are copied here once.
   size** (50% to 200%). They sit on the bar of Plater, Threat Plates, and
   the other nameplate AddOns that Dyre's Toolkit knows.
 
+## Warlock: Demonic Brand (WoW: Forever)
+
+- A **glowing red pentagram** above an enemy's nameplate while your Demonic
+  Brand is on the mob. Its red glow pulses. The Demonic Brand talent makes
+  your Searing Pain brand the mob for 10 seconds, and your demon's next
+  attacks on it deal extra damage. Recast Searing Pain when the pentagram
+  goes.
+- Only your own Brand shows. Another Warlock's Brand helps only their
+  demon.
+- On by default for Warlocks on WoW: Forever. "Demonic Brand" on the DoTs
+  page: **Show**, **Size** (50% to 200%, default 100%), **Height above
+  nameplate** (0 to 60 pixels, default 10), **Preview**, and **Reset
+  Demonic Brand**. Changes apply at once.
+- **Preview** (or `/ddt preview brand`): the pentagram on your target's
+  nameplate with no Brand on it, also without the talent, so you can set
+  Size and Height. Press it again, change target, or log out to end it. The game draws the pentagram, so it works in
+  combat. It sits on the bar of Plater, Threat Plates, and the other
+  nameplate AddOns that Dyre's Toolkit knows. Classic Era has no Demonic
+  Brand, so it has no pentagram and no rows.
+
 ## Classes
 
 | Class | DoTs | Crowd control |

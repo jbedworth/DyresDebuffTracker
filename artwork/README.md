@@ -38,6 +38,17 @@ look frozen"). Chilled is a thin band of frost mist with rime needles and
 six snowflakes, paler and lighter than Frozen. Both curve up over the
 nameplate. Our own art; nothing is copied from another AddOn.
 
+## The Warlock's Demonic Brand pentagram
+
+`Textures/BrandPentagram.tga` and `Textures/BrandGlow.tga` (128 x 128, the
+same format), made by `python scripts/make_artwork.py --brand` (John,
+2026-11-21: "Make it a glowing red pentagram that renders above the
+nameplate"). The pentagram is a five-point star drawn in one stroke inside a
+circle: red, with a bright core line and a dark rim, as SVG rendered with
+headless Chrome as the arcs are. The glow is a soft red halo computed by the
+script; the game draws it behind the star with additive blending and pulses
+it. Our own art; nothing is copied from Blizzard or another AddOn.
+
 ## Screenshots
 
 `screenshots/*-raw.webp` are John's raw Classic Era screenshots (2026-10-30,

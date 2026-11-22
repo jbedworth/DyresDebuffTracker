@@ -59,6 +59,58 @@ LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
 - [ ] "Arc height", "Arc size", and the switch apply at once. A Warlock or
       other class has no "Frozen and chilled" rows.
 
+## In-client checks: Demonic Brand pentagram (Warlock, Forever)
+
+First: after you install, **restart the game client** (quit and start it).
+`/reload` does not load new TGA files (BrandPentagram.tga, BrandGlow.tga),
+so the pentagram would show as a blank or green square.
+
+The IDs come from web sources (Frost.lua names them; none checked in the
+client yet): Wowhead `spell=1293696` (the debuff, 10 s, Magic) and
+`spell=1293695` (the hidden talent passive: 2/4/6 charges of 1293696 by
+rank), warcraft.wiki.gg "Demonic Brand", and warcraftmaps.com
+`spell/1293695` (client build 1.60.1.70938).
+
+- [ ] With the talent, cast Searing Pain on a mob. Then, while the Brand is
+      on it: `/dump C_UnitAuras.GetAuraDataBySpellName("target", "Demonic
+      Brand", "HARMFUL")`. Out of combat only (in combat the values are
+      secret). If that function is missing, use `/dump
+      AuraUtil.FindAuraByName("Demonic Brand", "target", "HARMFUL")` (the
+      spell ID is its 10th value, the source its 7th). Note `spellId`
+      (expected 1293696), `sourceUnit` (expected "player"; if it is "pet"
+      or nil, the `HARMFUL|PLAYER` slot draws nothing: change the filter to
+      `HARMFUL`, as for the armor chill), `duration` (expected 10), and
+      `applications` (the charges left: expected 2, 4, or 6 by rank).
+- [ ] `/dump C_Spell.GetSpellName(1293696)` shows "Demonic Brand". If it is
+      nil, the pentagram and its rows stay off: `/ddt debug` shows `brand
+      off: this client lacks Demonic Brand (1293696)`.
+- [ ] `/ddt debug`: the `brand` line shows `on=true`, `plates` at least 1,
+      and in `anchors` your nameplate AddOn (or `Blizzard`).
+- [ ] Out of combat and in combat: Searing Pain a mob. A red pentagram with
+      a pulsing red glow shows above its plate, clear of the mob's name,
+      and goes when the Brand ends (10 s, or sooner when your demon uses
+      its last charge). No Lua error. The frame rate does not drop.
+- [ ] The plate goes off screen and comes back while the Brand is on: the
+      pentagram comes back with it.
+- [ ] Another Warlock's Brand on a mob shows no pentagram.
+- [ ] A Warlock without the talent: Searing Pain shows nothing; the rows
+      are still there.
+- [ ] Show, Size (shows "100%"), and Height above nameplate (shows "10")
+      apply at once. Reset Demonic Brand puts back on, 100%, 10. The heading
+      "Demonic Brand" is last on the DoTs page. A Mage or other class has no
+      "Demonic Brand" rows. On Classic Era a Warlock has none either.
+- [ ] With Plater, Threat Plates, Platynator, or EllesmereUI: the pentagram
+      sits above their health bar.
+- [ ] Preview, with no talent (an Affliction or low-level Warlock): target a
+      mob with its nameplate showing and press "Preview" (or `/ddt preview
+      brand`). The pentagram and its pulsing glow show above its plate. Move
+      Size and Height: it changes at once. Press Preview again: it goes.
+      Start it again and change target: it goes. Start it, then move away
+      until the plate goes: it goes. No target or no plate: a chat line says
+      so, nothing shows. In combat: it works, with no Lua error and no
+      "blocked action" message. Turn "Show" off: the preview stays (it is
+      for tuning).
+
 ## In-client checks: per-panel settings (Toolkit 2.13.0)
 
 - [ ] DoTs page: "Panels", then "Target panel", "Focus panel", "Others

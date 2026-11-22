@@ -135,8 +135,18 @@ local function Choice(category, variable, name, table, key, default, choices, to
     return Settings.CreateDropdown(category, setting, Options, tooltip)
 end
 
--- A slider for table()[key], whole numbers from low to high.
-local function Slider(category, variable, name, table, key, default, low, high, tooltip, onChange)
+-- The Toolkit's gold mark at the slider's default (John, 2026-11-21: "set
+-- notches on the sliders default values"). range = {min, max, default}.
+local function DefaultTick(initializer, range)
+    if initializer and DDT.toolkit and type(DDT.toolkit.AddDefaultTick) == "function" then
+        DDT.toolkit.AddDefaultTick(initializer, range)
+    end
+    return initializer
+end
+
+-- A slider for table()[key], whole numbers from low to high, with the gold
+-- default mark. label: how the number shows (DDT.WholeLabel when nil).
+local function Slider(category, variable, name, table, key, default, low, high, tooltip, onChange, label)
     if type(Settings.CreateSlider) ~= "function" or type(Settings.CreateSliderOptions) ~= "function" then
         return nil
     end
@@ -152,9 +162,10 @@ local function Slider(category, variable, name, table, key, default, low, high, 
     if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
         -- Always a number: with no formatter the slider shows no value, and a
         -- thumb at 3 of 0-20 reads as 0 (John's Outline width, 2026-11-21).
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, DDT.WholeLabel)
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, label or DDT.WholeLabel)
     end
-    return Settings.CreateSlider(category, setting, options, tooltip)
+    return DefaultTick(Settings.CreateSlider(category, setting, options, tooltip),
+        {min = low, max = high, step = 1, default = default})
 end
 
 -- "Tracker size": a percent slider on steps of 5, with the gold default mark.
@@ -188,11 +199,7 @@ local function TrackerSize(category, tooltip, onChange)
             return string.format("%d%%", value)
         end)
     end
-    local initializer = Settings.CreateSlider(category, setting, options, tooltip)
-    if DDT.toolkit and type(DDT.toolkit.AddDefaultTick) == "function" then
-        DDT.toolkit.AddDefaultTick(initializer, spec)
-    end
-    return initializer
+    return DefaultTick(Settings.CreateSlider(category, setting, options, tooltip), spec)
 end
 
 -- The line at the top of a page: who has this kind for your class.
@@ -214,6 +221,7 @@ end
 
 local function Dots() return DDT.db.dots end
 local function Frost() return DDT.db.frost end
+local function Brand() return DDT.db.brand end
 local function Predict() return DDT.db.predict end
 local function Control() return DDT.db.control end
 
@@ -235,6 +243,36 @@ local function FrostSection(category, layout)
             .. ".", DDT.RefreshFrost), master, On)
     Nest(Slider(category, "DDT_FROST_SIZE", "Arc size", Frost, "size", size.default, size.min, size.max,
         "The arcs' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshFrost), master, On)
+end
+
+-- The Warlock's Demonic Brand pentagram (Frost.lua; John, via the lead,
+-- 2026-11-21: "Make it a glowing red pentagram that renders above the
+-- nameplate, and make it so the size and height can be adjusted"). This
+-- AddOn's own, as the Mage's arcs: never greyed for a Tools AddOn. Only
+-- where the client knows the debuff (Forever). Every change applies at once.
+local function BrandSection(category, layout)
+    if DDT.class ~= "WARLOCK" or not DDT.brandArcs then
+        return
+    end
+    Heading(layout, "Demonic Brand")
+    local master = Flag(category, "DDT_BRAND", "Show", Brand, "enabled", true,
+        "A glowing red pentagram above an enemy's nameplate while your Demonic Brand is on it (your Searing Pain "
+            .. "puts it there; your demon's next attacks on it deal extra damage). Recast Searing Pain when it goes.",
+        DDT.RefreshBrand)
+    local function On() return DDT.db.brand.enabled end
+    local offset, size = DDT.BRAND_OFFSET, DDT.BRAND_SIZE
+    Nest(Slider(category, "DDT_BRAND_SIZE", "Size", Brand, "size", size.default, size.min, size.max,
+        "The pentagram's size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshBrand,
+        function(value) return string.format("%d%%", value) end), master, On)
+    Nest(Slider(category, "DDT_BRAND_OFFSET", "Height above nameplate", Brand, "offset", offset.default, offset.min,
+        offset.max, "How far above the nameplate's health bar the pentagram's glow starts, in pixels: " .. offset.min
+            .. " to " .. offset.max .. ".", DDT.RefreshBrand), master, On)
+    Button(layout, "Demonic Brand", "Preview", DDT.PreviewBrand,
+        "Shows the pentagram on your target's nameplate with no Demonic Brand on it, so you can set Size and "
+            .. "Height. Press again, or change target, to end it.")
+    Button(layout, "Demonic Brand", "Reset Demonic Brand", DDT.ResetBrand,
+        "Show, Size, and Height back to their defaults: on, " .. size.default .. "%, " .. offset.default
+            .. " pixels.")
 end
 
 -- A percent slider for a panel's Tracker size (DDT.TRACKER_SIZE); false
@@ -269,11 +307,7 @@ local function PanelTrackerSize(category, variable, panel, tooltip, onChange)
             return string.format("%d%%", value)
         end)
     end
-    local initializer = Settings.CreateSlider(category, setting, options, tooltip)
-    if DDT.toolkit and type(DDT.toolkit.AddDefaultTick) == "function" then
-        DDT.toolkit.AddDefaultTick(initializer, spec)
-    end
-    return initializer
+    return DefaultTick(Settings.CreateSlider(category, setting, options, tooltip), spec)
 end
 
 -- The Panels section (the Toolkit's TRACKER_PANEL_OPTIONS; John, 2026-11-21:
@@ -355,9 +389,9 @@ local function PanelSections(category, layout, master, On, Changed, Rebuilt)
                         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
                             and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
                     end
-                    Nest(ShowFor(OnlyWhenOurs(Settings.CreateSlider(category, setting, options,
+                    Nest(ShowFor(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
                         (SIZE_TIPS[spec.key] or ("This panel's " .. label:lower() .. " in the " .. look .. " look."))
-                            .. " A change in combat applies when combat ends."), "dots"), ThisLook), master, On)
+                            .. " A change in combat applies when combat ends."), spec), "dots"), ThisLook), master, On)
                 end
             end
             local positions = {}
@@ -390,6 +424,7 @@ local function DotsPage(parent)
     DDT.dotsCategory = category
     if not Status(layout, "dots", NO_DOTS) then
         FrostSection(category, layout)
+        BrandSection(category, layout)
         return
     end
     local function Changed() DDT.RefreshDots(false) end
@@ -438,9 +473,9 @@ local function DotsPage(parent)
                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
                         and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
                 end
-                Nest(ShowFor(OnlyWhenOurs(Settings.CreateSlider(category, setting, options,
+                Nest(ShowFor(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
                     (SIZE_TIPS[spec.key] or ("The DoT tracker's " .. label:lower() .. " in the " .. look .. " look."))
-                        .. " A change in combat applies when combat ends."), "dots"), ThisLook), master, On)
+                        .. " A change in combat applies when combat ends."), spec), "dots"), ThisLook), master, On)
             end
         end
         local positions = {}
@@ -655,6 +690,7 @@ local function DotsPage(parent)
         end
     end
     FrostSection(category, layout)
+    BrandSection(category, layout)
 end
 
 local function ControlPage(parent)

@@ -336,7 +336,7 @@ DDT.PROFILE_CHARACTER_KEYS = {"macrosOwned"}
 function DDT.ProfileSettings(settings)
     settings = type(settings) == "table" and settings or {}
     local clean = DDT.SanitizeDB({dots = settings.dots, predict = settings.predict, control = settings.control,
-        frost = settings.frost, macrosOwned = settings.macrosOwned, toolsImported = settings.toolsImported},
+        frost = settings.frost, brand = settings.brand, macrosOwned = settings.macrosOwned, toolsImported = settings.toolsImported},
         DDT.classData)
     local live = type(DDT.db) == "table" and type(DDT.db.dots) == "table" and DDT.db.dots or {}
     for _, slot in ipairs(DDT.classData and DDT.classData.dots or {}) do
@@ -379,6 +379,7 @@ function DDT.ApplyProfile()
         control:Refresh()
     end
     DDT.RefreshFrost()
+    DDT.RefreshBrand()
 end
 
 -- Joins the profile, where the Toolkit has one (2.10.0); else nothing changes.
@@ -414,6 +415,19 @@ function DDT.Start()
         else
             DDT.frostMissing = tostring(missing)
             DDT.Report("The frozen and chilled arcs stay off: this client lacks " .. tostring(missing) .. ".")
+        end
+    end
+    -- The Warlock's Demonic Brand pentagram, the same way. Only where the client
+    -- knows the debuff (Forever); on Classic Era, quietly none.
+    if DDT.class == "WARLOCK" then
+        local arcs, missing = DDT.CreateBrandArcs(DDT.toolkit, function() return DDT.db.brand end)
+        if arcs then
+            DDT.brandArcs = arcs
+        else
+            DDT.brandMissing = tostring(missing)
+            if DDT.BrandKnown() then
+                DDT.Report("The Demonic Brand pentagram stays off: this client lacks " .. tostring(missing) .. ".")
+            end
         end
     end
     if not DDT.classData then
@@ -503,6 +517,43 @@ function DDT.RefreshFrost()
     end
 end
 
+function DDT.RefreshBrand()
+    if DDT.brandArcs then
+        DDT.brandArcs:Refresh()
+    end
+end
+
+-- The Demonic Brand preview on your target's nameplate, on or off (the
+-- "Preview" button and /ddt preview). No debuff needed.
+DDT.BRAND_PREVIEW_TEXT = {
+    started = "Demonic Brand preview: on your target's nameplate. Change Size and Height to see them. Press "
+        .. "Preview again, or change target, to end it.",
+    stopped = "Demonic Brand preview: off.",
+    ["no plate"] = "Demonic Brand preview: target a mob with its nameplate showing first.",
+}
+
+function DDT.PreviewBrand()
+    if not DDT.brandArcs then
+        DDT.Report(DDT.class == "WARLOCK"
+            and "Demonic Brand preview: this client has no Demonic Brand (" .. tostring(DDT.brandMissing) .. ")."
+            or "Demonic Brand preview: Warlocks only.")
+        return nil
+    end
+    local result = DDT.brandArcs:TogglePreview()
+    DDT.Report(DDT.BRAND_PREVIEW_TEXT[result])
+    return result
+end
+
+-- The Demonic Brand rows back to their defaults (in place: the settings read
+-- DDT.db.brand live).
+function DDT.ResetBrand()
+    local defaults = DDT.SanitizeDB({}, DDT.classData).brand
+    for key, value in pairs(defaults) do
+        DDT.db.brand[key] = value
+    end
+    DDT.RefreshBrand()
+end
+
 function DDT.RefreshControl()
     if DDT.controlTracker then
         DDT.controlTracker:Refresh()
@@ -581,6 +632,16 @@ function DDT.DebugLines()
         lines[#lines + 1] = "frost off: this client lacks " .. tostring(DDT.frostMissing)
     else
         lines[#lines + 1] = "frost none (Mage only)"
+    end
+    -- The Warlock's Demonic Brand pentagram (Frost.lua).
+    if DDT.brandArcs then
+        for _, line in ipairs(DDT.brandArcs:DebugLines()) do
+            lines[#lines + 1] = "brand " .. line
+        end
+    elseif DDT.class == "WARLOCK" then
+        lines[#lines + 1] = "brand off: this client lacks " .. tostring(DDT.brandMissing)
+    else
+        lines[#lines + 1] = "brand none (Warlock only)"
     end
     return lines
 end

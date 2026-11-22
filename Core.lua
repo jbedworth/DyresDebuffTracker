@@ -433,6 +433,11 @@ function DDT.SanitizeDB(db, classData)
     db.frost = {enabled = Bool(frost.enabled, true),
         offset = Whole(frost.offset, DDT.FROST_OFFSET.min, DDT.FROST_OFFSET.max, DDT.FROST_OFFSET.default),
         size = Whole(frost.size, DDT.FROST_SIZE.min, DDT.FROST_SIZE.max, DDT.FROST_SIZE.default)}
+    -- The Warlock's Demonic Brand pentagram (Frost.lua); kept for every class, used by Warlocks.
+    local brand = type(db.brand) == "table" and db.brand or {}
+    db.brand = {enabled = Bool(brand.enabled, true),
+        offset = Whole(brand.offset, DDT.BRAND_OFFSET.min, DDT.BRAND_OFFSET.max, DDT.BRAND_OFFSET.default),
+        size = Whole(brand.size, DDT.BRAND_SIZE.min, DDT.BRAND_SIZE.max, DDT.BRAND_SIZE.default)}
     -- The class Tools AddOn's settings were copied (or there was nothing to
     -- copy): once per character, and a profile copy counts (DDT.ImportFromTools).
     db.toolsImported = db.toolsImported == true
@@ -699,10 +704,11 @@ end
 -- Startup and commands -------------------------------------------------------
 
 local HELP = "/ddt opens the settings; /ddt reset puts the frames back; /ddt reset_focus checks the focus again; "
-    .. "/ddt debug shows what the trackers see."
+    .. "/ddt debug shows what the trackers see; /ddt preview brand shows the Demonic Brand pentagram on your "
+    .. "target (Warlocks, WoW: Forever)."
 
 local function HandleCommand(message)
-    local command = (message or ""):lower():match("^%s*(%S*)")
+    local command, argument = (message or ""):lower():match("^%s*(%S*)%s*(%S*)")
     if not DDT.available then
         DDT.Report(DDT.TOOLKIT_MISSING)
     elseif command == "" then
@@ -717,6 +723,8 @@ local function HandleCommand(message)
         for _, line in ipairs(DDT.DebugLines()) do
             DDT.Report(line)
         end
+    elseif command == "preview" and (argument == "" or argument == "brand") then
+        DDT.PreviewBrand()
     else
         DDT.Report(HELP)
     end

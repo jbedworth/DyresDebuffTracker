@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.5.0
+
+### Features
+
+- **Demonic Brand** (Warlocks, WoW: Forever): a glowing red pentagram above
+  an enemy's nameplate while your Demonic Brand is on it. Your Searing Pain
+  puts the Brand on; recast it when the pentagram goes. Only your own Brand
+  shows, because only your demon uses it. On by default. "Demonic Brand" on
+  the DoTs page: **Show**, **Size** (50% to 200%), **Height above
+  nameplate** (0 to 60 pixels), **Preview**, and **Reset Demonic Brand**.
+  Changes apply at once. **Preview** (or `/ddt preview brand`) shows the
+  pentagram on your target's nameplate with no Brand on it, so you can set
+  the size and height; press it again, or change target, to end it.
+  Classic Era has no Demonic Brand, so nothing changes there. After you
+  install this version, restart the game (not only /reload): the game loads
+  new image files only at start.
+- Every slider on the settings pages has a gold mark at its default value,
+  so you can see where the default is.
+
 ## 1.4.0
 
 ### Features

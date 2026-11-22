@@ -268,7 +268,8 @@ character knows, at its best rank; none for a spell it does not know.
     places), panelOpacity, onPlates, plateDots and its offset and opacity),
     `predict` (every setting, with the DIES places and offsets), and
     `control` (enabled, plateTimers, macros, say, position, scale, markers,
-    announce, texts, width, barHeight, textScale, opacity), `frost` (the Mage's arcs: enabled, offset, size), and
+    announce, texts, width, barHeight, textScale, opacity), `frost` (the Mage's arcs: enabled, offset, size),
+    `brand` (the Warlock's Demonic Brand pentagram: enabled, offset, size), and
     `toolsImported` (the class Tools AddOn's settings copied once).
   - `characterKeys` = {"macrosOwned"}: the names of the character macros
     this AddOn keeps (the control tracker's keeper `owned`); macros are per
@@ -284,7 +285,7 @@ character knows, at its best rank; none for a spell it does not know.
     profile).
   `DDT.ProfileSettings(settings)`: any table (empty, partial, older, newer,
   another class's) through SanitizeDB with this character's class table;
-  only dots, predict, control, frost, and macrosOwned are kept; never errors.
+  only dots, predict, control, frost, brand, and macrosOwned are kept; never errors.
   `DDT.ApplyProfile` (refresh; the Toolkit writes DDT.db in place and
   applies only out of combat): `ReapplyWidgets` (the control bar's place and
   scale), the DoT tracker's `ResetPosition` (the panels' places),
@@ -293,6 +294,55 @@ character knows, at its best rank; none for a spell it does not know.
   dots; predictor), the plate dots' colors and opacity, and the control
   tracker's `SetScale`, `Rebuild`, and `Refresh` (owner claim, clicks, plate
   timers, macros through the out-of-combat path). Nothing needs a reload.
+- Demonic Brand pentagram, Warlock only, Forever only (John, via the lead,
+  2026-11-21: "Demonic Brand (for Demonology Warlocks): we need to add it.
+  It's a debuff on your current target, but it should render like the
+  frost/frozen debuff indicators"; then the same day: "Make it a glowing red
+  pentagram that renders above the nameplate, and make it so the size and
+  height can be adjusted"; a player asked on WTF's CurseForge page, comment
+  8766431). Frost.lua: the arc builder is shared (`CreateArcs`, local) with a
+  per-spec `look` ({width, height, Draw}); `DDT.CreateBrandArcs` uses it with
+  `DDT.BRAND_SPELLS` (one slot `brand`, filter `HARMFUL|PLAYER`: only your
+  demon uses your Brand; ID 1293696, a set) and `BRAND_LOOK`: the engine's
+  button is 48 x 48 (`DDT.BRAND_GLOW`), with Textures/BrandGlow.tga
+  (BACKGROUND, blend ADD, the whole button) and BrandPentagram.tga
+  (ARTWORK, 28 x 28, `DDT.BRAND_STAR`, centered); both 128 x 128, made by
+  scripts/make_artwork.py --brand (our own art). The glow pulses with an
+  AnimationGroup on the glow texture (Alpha 0.45 to 1, 0.9 s, BOUNCE,
+  `DDT.BRAND_PULSE`), played once in `initializeFrame`; no OnUpdate. New
+  TGA files need a full client restart, not /reload. Made in `DDT.Start`
+  for every Warlock (any Warlock may take the talent; talents are never
+  read), before the Tools AddOn check, only when `DDT.BrandKnown()` (a
+  static `C_Spell.GetSpellName(1293696)`, else `GetSpellInfo`): Classic
+  Era has no such spell, so no pentagram, no rows, no message. Plate rules
+  as the Mage's arcs (pool, NAME_PLATE_UNIT_ADDED/REMOVED, FindPlateBar,
+  hostile only); no GUID memory: the engine's container reads the plate's
+  unit each time, so a plate that comes back shows the Brand again. Shown
+  on any enemy plate with your Brand (in practice your Searing Pain
+  target). `db.brand` = {enabled (true), offset (0 to 60, 10: pixels from
+  the bar to the glow's bottom; the star is 10 more above it), size (50 to
+  200 percent, 100)}, repaired in SanitizeDB; in the profile
+  (`DDT.RefreshBrand`). Options (`BrandSection`, after "Frozen and
+  chilled", last on the DoTs page, never greyed): "Show", "Size" (label
+  "N%"), "Height above nameplate" (label "N"; `Slider` takes an optional
+  label formatter), and "Reset Demonic Brand" (`DDT.ResetBrand`: the
+  defaults written into the same table). `/ddt debug`: a `brand` line;
+  `brand off: this client lacks Demonic Brand (1293696)`; not a Warlock:
+  `brand none (Warlock only)`. IDs from the web (Wowhead spell=1293696 and
+  1293695, warcraft.wiki.gg, warcraftmaps.com), not yet checked in client:
+  TESTING.md has the /dump. No charge count (the debuff's applications,
+  2/4/6 by rank). Preview (the lead, 2026-11-21: John's Warlock is
+  Affliction and low level, so he cannot apply the Brand): the "Preview"
+  button and `/ddt preview brand` (also `/ddt preview`) call
+  `DDT.PreviewBrand` -> `arcs:TogglePreview()` ("started", "stopped", "no
+  plate"; a chat line each, `DDT.BRAND_PREVIEW_TEXT`). It is our own frame
+  drawn with the same `look.Draw` (not an engine button, no aura, nothing
+  protected, so also in combat and without the talent), parented to
+  `C_NamePlate.GetNamePlateForUnit("target")` and placed with the same
+  `Place` (FindPlateBar("target"), Size, Height); `arcs:Refresh` places it
+  again, so the sliders and Reset apply live; it stays while "Show" is off.
+  It ends on a second press, PLAYER_TARGET_CHANGED, PLAYER_LOGOUT, or
+  NAME_PLATE_UNIT_REMOVED for its plate. Not saved.
 - Frozen and chilled arcs, Mage only (John, 2026-11-18: "a frozen/icy arc
   above the chilled and frozen mobs nameplates (2 different looking
   visuals, I think a mob can be both frozen and chilled)"; lead's spec the

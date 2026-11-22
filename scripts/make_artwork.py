@@ -1,6 +1,6 @@
-"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots] [--arcs]
+"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots] [--arcs] [--brand]
 
-Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all four):
+Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all five):
 - artwork/dyres-debuff-tracker-logo.svg, the 1024 x 1024 vector source: the
   family's dark-brown field and fine gold border (as Dyre's Debuff Tracker's and
   Warlock Tools Forever's logos), a gold clock dial with twelve ticks, a
@@ -18,6 +18,13 @@ Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all four):
   cracked ice crust with faceted crystal shards, tallest in the middle, a blue
   glow, and sparkles. Chilled: a thin band of frost mist, rime needles, and
   six snowflakes. Both curve up, as an arc over the plate. Our own art: nothing is copied from another AddOn.
+- Textures/BrandPentagram.tga and Textures/BrandGlow.tga, the Warlock's
+  Demonic Brand mark above enemy nameplates (John, 2026-11-21: "a glowing
+  red pentagram that renders above the nameplate"), 128 x 128, the same TGA
+  format. Pentagram: a five-point star drawn in one stroke inside a circle,
+  red with a bright core and a dark rim, as SVG rendered with headless
+  Chrome as the arcs are. Glow: a soft red halo, computed here (no Chrome),
+  drawn behind the star with additive blending. Our own art.
 - artwork/screenshots/*.png, listing crops of John's raw screenshots (the
   CROPS table: source file, box in source pixels), cut by headless Chrome,
   which decodes WebP. The raw files are never changed.
@@ -345,7 +352,39 @@ def chilled_svg():
 </g></svg>'''
 
 
-def svg_texture(svg, work):
+BRAND_SIZE = 128
+
+
+def pentagram_svg():
+    """A five-point star in one stroke (every second point of a pentagon) in a circle."""
+    c, r_ring, r_star = 64, 54, 53
+    pts = [(c + r_star * math.sin(k * 4 * math.pi / 5), c - r_star * math.cos(k * 4 * math.pi / 5)) for k in range(5)]
+    star = "M" + " L".join(f"{x:.2f},{y:.2f}" for x, y in pts) + "Z"
+    n = BRAND_SIZE
+    layer = lambda color, width: (
+        f'<circle cx="{c}" cy="{c}" r="{r_ring}" fill="none" stroke="{color}" stroke-width="{width}"/>'
+        f'<path d="{star}" fill="none" stroke="{color}" stroke-width="{width}" stroke-linejoin="round"/>')
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{n*ARC_SAMPLES}" height="{n*ARC_SAMPLES}" viewBox="0 0 {n} {n}">
+<defs><filter id="g" filterUnits="userSpaceOnUse" x="0" y="0" width="{n}" height="{n}"><feGaussianBlur stdDeviation="2.2"/></filter></defs>
+<g filter="url(#g)" opacity="0.9">{layer("#ff1a0a", 9)}</g>
+{layer("#5a0000", 8)}{layer("#e0140c", 5.5)}{layer("#ffb08a", 1.8)}
+</svg>'''
+
+
+def glow_texture():
+    """A soft red halo: full at the middle, gone at the edge (rows of r, g, b, a floats)."""
+    n, c, texture = BRAND_SIZE, (BRAND_SIZE - 1) / 2, []
+    for y in range(n):
+        row = []
+        for x in range(n):
+            d = min(1.0, math.hypot(x - c, y - c) / (n / 2))
+            a = max(0.0, 1 - d) ** 2.2 * 0.9
+            row.append((1.0, 0.12 + 0.25 * (1 - d) ** 3, 0.05, a))
+        texture.append(row)
+    return texture
+
+
+def svg_texture(svg, work, width=ARC_W, height=ARC_H):
     """The SVG on black and on white (the two shots give the alpha), averaged
     ARC_SAMPLES x ARC_SAMPLES: rows of (r, g, b, a) floats 0-1."""
     shots = []
@@ -353,13 +392,13 @@ def svg_texture(svg, work):
         page, png = work / f"arc-{name}.html", work / f"arc-{name}.png"
         page.write_text(f'<html><body style="margin:0;background:{background}">{svg}</body></html>',
                         encoding="utf-8")
-        shoot(page, png, ARC_W * ARC_SAMPLES, ARC_H * ARC_SAMPLES)
+        shoot(page, png, width * ARC_SAMPLES, height * ARC_SAMPLES)
         shots.append(read_png(png)[2])
     black, white = shots
     n, texture = ARC_SAMPLES, []
-    for y in range(ARC_H):
+    for y in range(height):
         row = []
-        for x in range(ARC_W):
+        for x in range(width):
             color, alpha = [0.0, 0.0, 0.0], 0.0
             for sy in range(n):
                 for sx in range(n):
@@ -377,7 +416,8 @@ def svg_texture(svg, work):
 
 def write_tga(path, texture):
     """Uncompressed 32-bit BGRA, top-left origin."""
-    header = bytes((0, 0, 2)) + bytes(9) + ARC_W.to_bytes(2, "little") + ARC_H.to_bytes(2, "little")         + bytes((32, 0x28))
+    width, height = len(texture[0]), len(texture)
+    header = bytes((0, 0, 2)) + bytes(9) + width.to_bytes(2, "little") + height.to_bytes(2, "little")         + bytes((32, 0x28))
     out = bytearray()
     for row in texture:
         for r, g, b, a in row:
@@ -389,6 +429,12 @@ def write_tga(path, texture):
 def make_arcs(work):
     write_tga(ROOT / "Textures" / "FrozenArc.tga", svg_texture(frozen_svg(), work))
     write_tga(ROOT / "Textures" / "ChilledArc.tga", svg_texture(chilled_svg(), work))
+
+
+def make_brand(work):
+    write_tga(ROOT / "Textures" / "BrandPentagram.tga",
+              svg_texture(pentagram_svg(), work, BRAND_SIZE, BRAND_SIZE))
+    write_tga(ROOT / "Textures" / "BrandGlow.tga", glow_texture())
 
 
 def make_logo(work):
@@ -423,11 +469,13 @@ def make_screenshots(work):
 
 
 def main(args):
-    wanted = set(args) or {"--logo", "--icon", "--screenshots", "--arcs"}
+    wanted = set(args) or {"--logo", "--icon", "--screenshots", "--arcs", "--brand"}
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
         if "--arcs" in wanted:
             make_arcs(work)
+        if "--brand" in wanted:
+            make_brand(work)
         if "--logo" in wanted:
             make_logo(work)
         if "--icon" in wanted:
