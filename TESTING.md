@@ -59,6 +59,74 @@ LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
 - [ ] "Arc height", "Arc size", and the switch apply at once. A Warlock or
       other class has no "Frozen and chilled" rows.
 
+## In-client checks: per-panel settings (Toolkit 2.13.0)
+
+- [ ] DoTs page: "Panels", then "Target panel", "Focus panel", "Others
+      panel", each with its switch, Show mob health, Health text, Show panel
+      frame, Outline width (not Others), Grow, Tracker size, the chosen
+      look's sizes and Name position, Panel color, Panel opacity, and
+      Reset. No tracker-wide health, size, frame, or outline rows above.
+- [ ] Every slider shows its number (Outline width shows 3 by default).
+- [ ] Your earlier settings show in all three panels at first.
+- [ ] Turn on mob health for Target only: the target panel shows health,
+      the focus and others do not. Set Focus outline to 0: only the focus
+      outline goes, and the focus panel moves up with nothing overlapping.
+      Set Others bar width to 400: only the other mobs' rows widen. Target
+      Tracker size 75%: only the target panel shrinks. In combat: frame at
+      once; the rest when combat ends; no Lua error.
+- [ ] Reset Target panel: only the target panel's settings go back; it
+      keeps its place.
+- [ ] With Dyre's Toolkit 2.12.0: the old one-set rows show and work.
+
+## In-client checks: Warlock move from WTF (parity and import)
+
+- [ ] With WTF 1.10.x: log in with this DDT. No "Copied" line yet (WTF
+      still has the parts). With a Smart curse key bound in WTF: one line
+      says the key now casts DDT's smart curse; Key Bindings shows it under
+      Dyre's Debuff Tracker; it casts the curse.
+- [ ] On a Warlock with WTF's tracker, prediction, and bar on and set away
+      from the defaults (colors, order, sizes, panel colors and opacity, the
+      smart curse, block look, bar size, markers, Fear and Banish messages
+      and texts): with WTF 1.11.0, log in. One chat line says the settings
+      were copied. The DoTs and Crowd control pages show WTF's values; the
+      tracker looks as it did. "! Fear", "! Banish", "! Seduction", and
+      "! Curse" stay in the same action bar slots (one "keeps your macro"
+      line each). Fear and Banish say WTF's texts, ending "via Dyre's Debuff
+      Tracker".
+- [ ] /reload: no second chat line, no second copy.
+- [ ] With WTF's DoT tracker off before the copy: DDT keeps its own DoT
+      settings (WTF's off switch does not come over).
+- [ ] With the WTF that still claims (1.10.x): DDT's pages say WTF has
+      them; with WTF disabled or the next WTF (no claims): DDT shows
+      everything, also after a /reload in either AddOn order.
+- [ ] Each new row on the DoTs page applies: a DoT color (bars and
+      nameplate dots), a place swap, each size slider and the name position
+      (only the chosen look's rows show), Reset size, each panel's color (at
+      once, also in combat) and opacity, the nameplate dots' height and
+      opacity and each DoT's dot, Reset order and colors, Block fill,
+      opacity, and outline.
+- [ ] Warlock with Curse of Weakness: Curse slot click "Smart curse": the
+      row click casts the smart curse, the letter shows (T, E, W), and the
+      "! Curse" macro appears (once DDT has the DoTs); Keep the control
+      macros off deletes it. Bind "Smart curse (Warlock)" under Key
+      Bindings, Dyre's Debuff Tracker: it casts the same curse.
+- [ ] A Mage or Druid: the new rows show, no Curse slot rows.
+
+## In-client checks: Mage move from MTF (Polymorph bar)
+
+- [ ] With MTF 1.5.x: no "Copied" line; MTF's bar shows.
+- [ ] With MTF 1.6.0, a Mage whose MTF bar was moved, sized, and faded:
+      one chat line says the Polymorph bar settings were copied. DDT's bar
+      sits where MTF's did, at the same size, width, height, text size,
+      and opacity, in MTF's purple. "! Polymorph" stays in its action bar
+      slot. With MTF's moon off: no moon.
+- [ ] Sheep a mob: one bar with the time left; click it to sheep your focus
+      again (Forever). On Era: the time left as text when no unit shows the
+      mob. A Polymorph first cast in combat still has its click.
+- [ ] Crowd control page: Bar width, Bar height, Text size, Opacity, and
+      Reset size apply (the bar at once; its timer when the slider rests).
+- [ ] A Warlock's control bar at the defaults looks as before.
+
 ## In-client checks: panel switches
 
 - [ ] With the Toolkit's panel change: the DoTs page shows "Show Target
@@ -73,6 +141,20 @@ LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
       and Import).
 - [ ] With Dyre's Toolkit 2.10.2: the checkboxes do not show, and all three
       panels work as before.
+
+## In-client checks: panel frame and outline (GitHub issue 1)
+
+- [ ] With the Toolkit's frame change: turn off "Show panel frame" on the
+      DoTs page. The Target, Focus, and Others rows lose the brown
+      background and the WoW border at once; the name and the DoT bars stay.
+      Also in combat: no Lua error. Turn it on: they come back.
+- [ ] "Outline width" at 0: the colored outline around the Target and Focus
+      panels goes (out of combat; in combat, when it ends). At 20: a wide
+      outline. Back to 3.
+- [ ] With both off, target a mob with no DoT: only its name shows.
+- [ ] Both follow the Toolkit profile (Copy settings from).
+- [ ] With Dyre's Toolkit 2.12.0: no "Show panel frame" checkbox, and the
+      outline slider works.
 
 ## In-client checks: Hide empty DoT slots
 

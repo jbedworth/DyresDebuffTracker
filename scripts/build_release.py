@@ -21,7 +21,9 @@ from pathlib import Path
 
 ADDON = "DyresDebuffTracker"
 RUNTIME_FILES = ("Core.lua", "Engines.lua", "Frost.lua", "Options.lua")
-TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + ("LICENSE",)
+# The Warlock's smart curse key binding (the client loads Bindings.xml by name).
+XML_FILES = ("Bindings.xml",)
+TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + XML_FILES + ("LICENSE",)
 # The one runtime texture: the AddOn list icon, made by scripts/make_artwork.py.
 # The builder requires uncompressed 32-bit TGAs with power-of-two sides (the
 # Mage's arcs are 128 x 32; the client takes any power-of-two sides).

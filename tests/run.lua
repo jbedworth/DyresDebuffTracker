@@ -122,6 +122,7 @@ local function fixture(options)
         timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0}
     local env = setmetatable({}, {__index = _G})
     env._G = env
+    state.env = env
     env.SlashCmdList = {}
     env.DEFAULT_CHAT_FRAME = {AddMessage = function(_, message) state.messages[#state.messages + 1] = message end}
     env.UIParent = newFrame(state, "Frame", "UIParent")
@@ -227,6 +228,7 @@ local function fixture(options)
     end
     local function Initializer(setting)
         return {setting = setting, AddModifyPredicate = function(self, predicate) self.modify = predicate end,
+            AddShownPredicate = function(self, predicate) self.shown = predicate end,
             SetParentInitializer = function() end}
     end
     if not options.noSettings then
@@ -252,12 +254,21 @@ local function fixture(options)
             end,
             CreateSlider = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
             CreateSliderOptions = function() return {} end,
+            CreateColorSwatch = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
             OpenToCategory = function(id) state.opened = id end,
         }
         env.CreateSettingsListSectionHeaderInitializer = function(text) return {text = text} end
+        state.buttons = {}
+        env.CreateSettingsButtonInitializer = function(name, text, onClick)
+            state.buttons[name .. ": " .. text] = onClick
+            return {text = name .. " [" .. text .. "]"}
+        end
     end
     env.DyresToolkitDB = {snapToGrid = false}
     env.DyresDebuffTrackerDB = options.saved
+    -- Warlock Tools Forever's per-character saved variables (read only).
+    env.WarlockToolsForeverDB = options.wtf
+    env.MageToolsForeverDB = options.mtf
     if not options.noToolkit then
         local ns = {InitializeMinimap = function() end}
         state.toolkitNS = ns
@@ -267,6 +278,10 @@ local function fixture(options)
             chunk("DyresToolkit", ns)
         end
         state.toolkit = env.DyresToolkit
+    end
+    -- An older Toolkit's page: no per-panel settings (TRACKER_PANEL_OPTIONS).
+    if options.oldPanels and state.toolkit then
+        state.toolkit.TRACKER_PANEL_OPTIONS = nil
     end
     -- Another Dyre's AddOn's claims, made before this one's login.
     if options.before then
@@ -570,7 +585,7 @@ end)
 
 -- John, 2026-11-14: "a 'Tracker size' slider ... increasing or decreasing by up to 25%".
 test("Tracker size: one percent, 75 to 125, sets the bar width and the compact icon size", function()
-    local state = fixture()
+    local state = fixture({oldPanels = true})
     local db, setting = state.ddt.db, state.settings.DDT_DOTS_TRACKER_SIZE
     assert(setting, "the slider on the DoTs page")
     equal(setting.category, "DoTs")
@@ -623,7 +638,7 @@ test("Grow: Down or Up per DoT panel, repaired, rebuilt, and shown only with a T
         realGrow = state.toolkit.TRACKER_GROW ~= nil
         state.toolkit.TRACKER_GROW = state.toolkit.TRACKER_GROW or {"down", "up"}
     end
-    local state = fixture({before = WithGrow})
+    local state = fixture({oldPanels = true, before = WithGrow})
     local db = state.ddt.db
     for _, key in ipairs({"target", "focus", "list"}) do
         equal(db.dots.grow[key], "down", key .. " grows down by default")
@@ -774,6 +789,689 @@ test("Panel switches: three checkboxes only with the Toolkit's TRACKER_PANELS, r
     equal(old.settings.DDT_DOTS_SHOW_LIST, nil)
     equal(#old.messages, 0)
     equal(old.ddt.db.dots.show.target, true, "still saved and repaired")
+end)
+
+-- GitHub issue 1 (a player, 2026-11-20: "When a target is selected, a frame
+-- appears with a purple border. I'd like to hide all of that and only show
+-- the debuff bars."; John: "Build parts 1 and 2").
+test("Panel frame and outline: a checkbox with TRACKER_FRAME, a slider with TRACKER_OUTLINE, repaired, live, in the profile", function()
+    local function WithFlag(state)
+        state.toolkit.TRACKER_FRAME = true
+    end
+    local state = fixture({oldPanels = true, before = WithFlag})
+    local db, tracker = state.ddt.db, state.ddt.dotTracker
+    local frame, outline = state.settings.DDT_DOTS_FRAME, state.settings.DDT_DOTS_OUTLINE
+    assert(frame, "the frame checkbox")
+    equal(frame.category, "DoTs")
+    equal(frame.name, "Show panel frame")
+    equal(frame.default, true)
+    assert(outline, "the outline slider")
+    equal(outline.category, "DoTs")
+    equal(outline.name, "Outline width")
+    equal(outline.default, 3)
+    equal(db.dots.frame, true, "the frame shows by default")
+    equal(db.dots.outlineWidth, 3, "3 px by default")
+    local colors, rebuilds = 0, 0
+    local apply, rebuild = tracker.ApplyPanelColors, tracker.Rebuild
+    tracker.ApplyPanelColors = function(self) colors = colors + 1; return apply and apply(self) end
+    tracker.Rebuild = function(self) rebuilds = rebuilds + 1; return rebuild(self) end
+    frame.set(false)
+    equal(db.dots.frame, false)
+    equal(colors, 1, "the frame changes at once")
+    outline.set(0)
+    equal(db.dots.outlineWidth, 0, "0 draws none")
+    equal(rebuilds, 1, "the outline rebuilds the rows")
+    outline.set(99)
+    equal(db.dots.outlineWidth, 20, "at most 20")
+    -- The profile carries both (they are under dots).
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Warlock",
+        parts = {DyresDebuffTracker = {dots = {frame = true, outlineWidth = 5}}}, pending = {}}
+    local before = colors
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.dots.frame, true, "copied")
+    equal(db.dots.outlineWidth, 5, "copied")
+    assert(colors > before, "the profile refresh applies the frame")
+    -- Bad saved values are repaired.
+    for _, bad in ipairs({"no", 0, {}}) do
+        local dots = fixture({saved = {dots = {frame = bad, outlineWidth = bad}}}).ddt.db.dots
+        equal(dots.frame, true, "saved frame " .. tostring(bad))
+        equal(dots.outlineWidth, bad == 0 and 0 or 3, "saved outline " .. tostring(bad))
+    end
+    local dots = fixture({saved = {dots = {frame = false, outlineWidth = 2.5}}}).ddt.db.dots
+    equal(dots.frame, false, "false stays")
+    equal(dots.outlineWidth, 3, "not whole: the default")
+    equal(fixture({saved = {dots = {outlineWidth = -4}}}).ddt.db.dots.outlineWidth, 0, "clamped")
+    -- Without the frame flag (an older Toolkit): no checkbox, no error; the outline slider stays.
+    local old = fixture({oldPanels = true, before = function(s) s.toolkit.TRACKER_FRAME = nil end})
+    equal(old.settings.DDT_DOTS_FRAME, nil)
+    assert(old.settings.DDT_DOTS_OUTLINE, "every supported Toolkit has the outline")
+    equal(#old.messages, 0)
+    equal(old.ddt.db.dots.frame, true, "still saved and repaired")
+end)
+
+-- DDT is the one home for the Warlock's DoTs (John, via the lead, 2026-11-20:
+-- "Users of WTF should manage their DoT tracking features in DDT ... This
+-- includes DoT Colors, tracker panels, etc."; "Yes, full move").
+test("WTF parity: every WTF tracker and prediction setting has a DDT row", function()
+    local state = fixture({oldPanels = true})
+    local s = state.settings
+    for _, name in ipairs({
+            -- General (WTF: Theme, outline, Hide empty, plate dots, offset, opacity, health, health text)
+            "DDT_DOTS_THEME", "DDT_DOTS_OUTLINE", "DDT_DOTS_PLATES", "DDT_DOTS_PLATES_OFFSET",
+            "DDT_DOTS_PLATES_OPACITY", "DDT_DOTS_HEALTH", "DDT_DOTS_HEALTH_TEXT",
+            -- Sizes per look, and the name position
+            "DDT_DOTS_COMPACT_ICONSIZE", "DDT_DOTS_COMPACT_NAMEWIDTH", "DDT_DOTS_COMPACT_TEXTSCALE",
+            "DDT_DOTS_COMPACT_NAMEPOSITION", "DDT_DOTS_BARS_BARWIDTH", "DDT_DOTS_BARS_LINEHEIGHT",
+            "DDT_DOTS_BARS_TEXTSCALE", "DDT_DOTS_BARS_NAMEPOSITION",
+            -- Each panel: color and opacity
+            "DDT_DOTS_PANEL_COLOR_TARGET", "DDT_DOTS_PANEL_COLOR_FOCUS", "DDT_DOTS_PANEL_COLOR_LIST",
+            "DDT_DOTS_PANEL_OPACITY_TARGET", "DDT_DOTS_PANEL_OPACITY_FOCUS", "DDT_DOTS_PANEL_OPACITY_LIST",
+            -- The curse slot
+            "DDT_DOTS_CURSE_MODE", "DDT_DOTS_CURSE_MARKER",
+            -- Damage to come
+            "DDT_PREDICT", "DDT_PREDICT_PLATES", "DDT_PREDICT_DIES", "DDT_PREDICT_FILL", "DDT_PREDICT_COLOR",
+            "DDT_PREDICT_OPACITY", "DDT_PREDICT_OUTLINE", "DDT_PREDICT_DIES_PLACE", "DDT_PREDICT_DIES_X",
+            "DDT_PREDICT_DIES_Y", "DDT_PREDICT_PLATE_DIES_PLACE", "DDT_PREDICT_PLATE_DIES_X",
+            "DDT_PREDICT_PLATE_DIES_Y",
+            -- Crowd control (WTF: markers, macros, plate timers; Bar size is the widget's)
+            "DDT_CONTROL_MACROS", "DDT_CONTROL_PLATES", "DDT_CONTROL_MARKER_BANISH"}) do
+        assert(s[name], "a DDT row for " .. name)
+        equal(s[name].category, name:find("^DDT_CONTROL") and "Crowd control" or "DoTs", name)
+    end
+    -- Each DoT: its place, color, and nameplate dot, for every Warlock slot.
+    local slots = state.ddt.classData.dots
+    for index, slot in ipairs(slots) do
+        assert(s["DDT_DOTS_ORDER_" .. index], "place " .. index)
+        assert(s["DDT_DOTS_COLOR_" .. slot.key:upper()], slot.key .. " color")
+        assert(s["DDT_DOTS_ONPLATE_" .. slot.key:upper()], slot.key .. " dot")
+    end
+    assert(state.buttons["Tracker size: Reset size"], "Reset size")
+    assert(state.buttons["Each DoT: Reset order and colors"], "Reset order and colors")
+    -- A Mage has no curse slot.
+    local mage = fixture({className = "Mage", class = "MAGE", book = {{133, "Fireball"}, {118, "Polymorph"}}})
+    equal(mage.settings.DDT_DOTS_CURSE_MODE, nil)
+    assert(mage.settings.DDT_DOTS_PANEL_COLOR_TARGET, "the panels are for every class")
+end)
+
+test("WTF parity: colors, order, sizes, panels, and nameplate dots apply and are repaired", function()
+    local state = fixture({oldPanels = true})
+    local ddt, s = state.ddt, state.settings
+    local db, tracker = ddt.db, ddt.dotTracker
+    local rebuilds, colors, opacity = 0, 0, 0
+    local rebuild, apply, panelOpacity = tracker.Rebuild, tracker.ApplyPanelColors, tracker.ApplyPanelOpacity
+    tracker.Rebuild = function(self) rebuilds = rebuilds + 1; return rebuild(self) end
+    tracker.ApplyPanelColors = function(self) colors = colors + 1; return apply(self) end
+    tracker.ApplyPanelOpacity = function(self) opacity = opacity + 1; return panelOpacity(self) end
+    -- Slot colors: WTF's defaults, read live by the tracker and the plate dots.
+    equal(db.dots.colors.curse, "ff9e40d9")
+    s.DDT_DOTS_COLOR_CORRUPTION.set("FF112233")
+    equal(db.dots.colors.corruption, "ff112233", "lower case")
+    equal(select(1, tracker:SlotColor("corruption")), 0x11 / 255, "the tracker reads it")
+    assert(rebuilds > 0, "the bars are rebuilt")
+    s.DDT_DOTS_COLOR_CORRUPTION.set("red")
+    equal(db.dots.colors.corruption, "ffffffff", "a bad color is the default")
+    -- Panel colors: at once.
+    equal(db.dots.panelColors.target, "ff8787ed")
+    local before = colors
+    s.DDT_DOTS_PANEL_COLOR_FOCUS.set("ff00ff00")
+    equal(db.dots.panelColors.focus, "ff00ff00")
+    assert(colors > before, "the panel colors apply at once")
+    -- Panel opacity: at once.
+    s.DDT_DOTS_PANEL_OPACITY_LIST.set(40)
+    equal(db.dots.panelOpacity.list, 40)
+    equal(opacity, 1)
+    -- Order: a pick swaps two places.
+    local order = db.dots.order
+    local first, third = order[1], order[3]
+    before = rebuilds
+    s.DDT_DOTS_ORDER_1.set(third)
+    equal(order[1], third)
+    equal(order[3], first, "swapped")
+    assert(rebuilds > before)
+    state.buttons["Each DoT: Reset order and colors"]()
+    equal(db.dots.order[1], first, "the class order again")
+    equal(db.dots.colors.corruption, "ffffffff")
+    -- Sizes, one by one: Tracker size shows the nearest percent; no percent overwrites them.
+    s.DDT_DOTS_BARS_BARWIDTH.set(400)
+    equal(db.dots.sizes.bars.barWidth, 400)
+    equal(db.dots.trackerSize, false, "set one by one")
+    equal(s.DDT_DOTS_TRACKER_SIZE.get(), 125, "the nearest percent, clamped")
+    s.DDT_DOTS_BARS_LINEHEIGHT.set(99)
+    equal(db.dots.sizes.bars.lineHeight, 28, "clamped")
+    s.DDT_DOTS_BARS_NAMEPOSITION.set("below")
+    equal(db.dots.sizes.bars.namePosition, "below")
+    equal(s.DDT_DOTS_BARS_BARWIDTH.initializer.shown(), true, "Bars sizes show with Bars")
+    equal(s.DDT_DOTS_COMPACT_ICONSIZE.initializer.shown(), false, "Compact's do not")
+    local saved = fixture({saved = {dots = {trackerSize = false, sizes = {bars = {barWidth = 400}}}}}).ddt.db.dots
+    equal(saved.sizes.bars.barWidth, 400, "kept at login")
+    equal(saved.trackerSize, false)
+    state.buttons["Tracker size: Reset size"]()
+    equal(db.dots.sizes.bars.barWidth, 290)
+    equal(db.dots.sizes.bars.namePosition, "above")
+    s.DDT_DOTS_TRACKER_SIZE.set(75)
+    equal(db.dots.trackerSize, 75, "the percent again")
+    equal(db.dots.sizes.bars.barWidth, 218)
+    -- Nameplate dots: height, opacity, and each DoT's dot.
+    s.DDT_DOTS_PLATES_OFFSET.set(80)
+    equal(db.dots.plateDotsOffset, 80)
+    s.DDT_DOTS_PLATES_OPACITY.set(55)
+    equal(db.dots.plateDotsOpacity, 55)
+    s.DDT_DOTS_ONPLATE_CONTROL.set(true)
+    equal(db.dots.onPlates.control, true)
+    -- Damage to come: fill, opacity, outline.
+    s.DDT_PREDICT_FILL.set("solid")
+    s.DDT_PREDICT_OPACITY.set(50)
+    s.DDT_PREDICT_OUTLINE.set("none")
+    equal(db.predict.fill, "solid")
+    equal(db.predict.opacity, 50)
+    equal(db.predict.outline, "none")
+    -- Repair at login.
+    local bad = fixture({saved = {dots = {colors = {curse = 5}, panelColors = {list = "nope"}, curseMode = "x",
+        curseMarker = "no"}}}).ddt.db.dots
+    equal(bad.colors.curse, "ff9e40d9")
+    equal(bad.panelColors.list, "ff545454")
+    equal(bad.curseMode, "last")
+    equal(bad.curseMarker, true)
+end)
+
+-- John, 2026-11-21: "The panel settings need to be organized by the panel
+-- they control, and each needs it's own config (size, border width, etc.) In
+-- the "Panels" section, with a sub-section heading for Target, Focus, and
+-- Other"; "The show mob health checkbox, and text config ... are missing
+-- from the Target/Focus/Others boxes".
+test("Panels: one sub-section per panel with its own rows; the tracker-wide rows go", function()
+    local realFlag
+    local state = fixture({before = function(st)
+        realFlag = type(st.toolkit.TRACKER_PANEL_OPTIONS) == "table"
+        st.toolkit.TRACKER_PANEL_OPTIONS = st.toolkit.TRACKER_PANEL_OPTIONS or {"health"}
+    end})
+    local s, db, tracker = state.settings, state.ddt.db, state.ddt.dotTracker
+    for _, name in ipairs({"Panels", "Target panel", "Focus panel", "Others panel"}) do
+        assert(state.heading("DoTs: " .. name), "the heading " .. name)
+    end
+    for _, key in ipairs({"TARGET", "FOCUS", "LIST"}) do
+        for _, row in ipairs({"HEALTH", "HEALTH_TEXT", "TRACKER_SIZE", "BARS_BARWIDTH", "BARS_LINEHEIGHT",
+                "BARS_TEXTSCALE", "BARS_NAMEPOSITION", "COMPACT_ICONSIZE", "COMPACT_NAMEWIDTH", "COMPACT_TEXTSCALE",
+                "COMPACT_NAMEPOSITION"}) do
+            assert(s["DDT_PANEL_" .. key .. "_" .. row], key .. " " .. row)
+            equal(s["DDT_PANEL_" .. key .. "_" .. row].category, "DoTs")
+        end
+        for _, row in ipairs({"DDT_DOTS_PANEL_COLOR_", "DDT_DOTS_PANEL_OPACITY_"}) do
+            assert(s[row .. key], row .. key)
+        end
+    end
+    if state.toolkit.TRACKER_FRAME == true then
+        assert(s.DDT_PANEL_TARGET_FRAME and s.DDT_PANEL_LIST_FRAME, "each panel's frame")
+    end
+    assert(s.DDT_PANEL_TARGET_OUTLINE and s.DDT_PANEL_FOCUS_OUTLINE, "the pinned panels' outline")
+    equal(s.DDT_PANEL_TARGET_OUTLINE.get(), 3, "the slider reads 3")
+    equal(state.ddt.WholeLabel(3), "3", "and shows the number")
+    equal(s.DDT_PANEL_LIST_OUTLINE, nil, "the list has no outline")
+    for _, gone in ipairs({"DDT_DOTS_HEALTH", "DDT_DOTS_HEALTH_TEXT", "DDT_DOTS_TRACKER_SIZE", "DDT_DOTS_FRAME",
+            "DDT_DOTS_OUTLINE", "DDT_DOTS_BARS_BARWIDTH", "DDT_DOTS_COMPACT_ICONSIZE"}) do
+        equal(s[gone], nil, gone .. " is per panel now")
+    end
+    assert(s.DDT_DOTS_THEME and s.DDT_DOTS_PLATES, "the tracker-wide rows stay")
+    -- Each panel's own values, apart.
+    s.DDT_PANEL_TARGET_HEALTH.set(true)
+    s.DDT_PANEL_TARGET_HEALTH_TEXT.set("both")
+    s.DDT_PANEL_FOCUS_OUTLINE.set(0)
+    s.DDT_PANEL_LIST_BARS_BARWIDTH.set(400)
+    s.DDT_PANEL_TARGET_TRACKER_SIZE.set(75)
+    equal(db.dots.panels.target.health, true)
+    equal(db.dots.panels.focus.health, false, "the focus keeps its own")
+    equal(db.dots.panels.target.healthText, "both")
+    equal(db.dots.panels.focus.outlineWidth, 0)
+    equal(db.dots.panels.target.outlineWidth, 3)
+    equal(db.dots.panels.list.sizes.bars.barWidth, 400)
+    equal(db.dots.panels.list.trackerSize, false, "set one by one")
+    equal(s.DDT_PANEL_LIST_TRACKER_SIZE.get(), 125, "the nearest percent")
+    equal(db.dots.panels.target.sizes.bars.barWidth, 218, "75%")
+    if realFlag then
+        local target, focus = tracker.pinned.target, tracker.pinned.focus
+        assert(target.health and target.healthPercent, "the target's health and text")
+        equal(focus.health, nil, "none on the focus")
+        assert(target.outline, "the target's outline")
+        equal(focus.outline, nil, "no outline on the focus")
+        equal(target.width, 218)
+        equal(focus.width, 290)
+        equal(tracker.rows[1].width, 400, "the list's own width")
+    end
+    -- Reset: that panel only, its place kept.
+    db.dots.sections.target = {point = "CENTER", relativePoint = "CENTER", x = 1, y = 2}
+    db.dots.panelColors.target = "ff00ff00"
+    state.buttons["Target panel: Reset Target panel"]()
+    equal(db.dots.panels.target.health, false)
+    equal(db.dots.panels.target.sizes.bars.barWidth, 290)
+    equal(db.dots.panelColors.target, "ff8787ed")
+    equal(db.dots.sections.target.x, 1, "its place stays")
+    equal(db.dots.panels.focus.outlineWidth, 0, "the others keep theirs")
+end)
+
+test("Panels: the tracker-wide values become each panel's starting values once; repaired; in the profile", function()
+    local saved = {dots = {health = true, healthText = "both", frame = false, outlineWidth = 5, trackerSize = 80}}
+    local state = fixture({saved = saved})
+    local panels = state.ddt.db.dots.panels
+    for _, key in ipairs({"target", "focus", "list"}) do
+        equal(panels[key].health, true, key)
+        equal(panels[key].healthText, "both", key)
+        equal(panels[key].frame, false, key)
+        equal(panels[key].outlineWidth, 5, key)
+        equal(panels[key].trackerSize, 80, key)
+        equal(panels[key].sizes.bars.barWidth, 232, key)
+    end
+    -- Saved panels stay; a missing or bad value is the tracker-wide one.
+    local own = fixture({saved = {dots = {health = false, outlineWidth = 3, panels = {
+        target = {health = true, outlineWidth = 9, trackerSize = false, sizes = {bars = {barWidth = 410}}},
+        focus = {healthText = "nope", outlineWidth = 2.5, frame = "x"}}}}}).ddt.db.dots.panels
+    equal(own.target.health, true)
+    equal(own.target.outlineWidth, 9)
+    equal(own.target.trackerSize, false)
+    equal(own.target.sizes.bars.barWidth, 410)
+    equal(own.focus.healthText, "none", "bad: the tracker-wide one")
+    equal(own.focus.outlineWidth, 3)
+    equal(own.focus.frame, true)
+    equal(own.list.health, false)
+    -- A profile from before per-panel settings: its tracker-wide values fill each panel.
+    local ns = state.toolkitNS
+    ns.db.profiles["Old - Realm"] = {class = "Warlock", parts = {DyresDebuffTracker = {dots = {health = false,
+        outlineWidth = 1, trackerSize = 120}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Old - Realm"), true)
+    local copied = state.ddt.db.dots.panels
+    equal(copied.focus.outlineWidth, 1)
+    equal(copied.list.trackerSize, 120)
+    equal(copied.target.health, false)
+end)
+
+test("Panels: the WTF import fills all three panels; an older Toolkit shows the tracker-wide rows", function()
+    local wtf = {tracker = {enabled = true, health = true, healthText = "percent", outlineWidth = 0,
+        sizes = {bars = {barWidth = 400, lineHeight = 20, textScale = 100, namePosition = "below"}}}}
+    local state = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"},
+        saved = {dots = {panels = {target = {health = false, outlineWidth = 7}}}}})
+    for _, key in ipairs({"target", "focus", "list"}) do
+        local panel = state.ddt.db.dots.panels[key]
+        equal(panel.health, true, key .. ": WTF's")
+        equal(panel.healthText, "percent", key)
+        equal(panel.outlineWidth, 0, key)
+        equal(panel.trackerSize, false, key)
+        equal(panel.sizes.bars.barWidth, 400, key)
+        equal(panel.sizes.bars.namePosition, "below", key)
+    end
+    -- An older Toolkit: today's tracker-wide rows; the panels follow them.
+    local old = fixture({oldPanels = true})
+    local s = old.settings
+    assert(s.DDT_DOTS_HEALTH and s.DDT_DOTS_TRACKER_SIZE and s.DDT_DOTS_OUTLINE, "the tracker-wide rows")
+    equal(s.DDT_PANEL_TARGET_HEALTH, nil, "no per-panel rows")
+    equal(old.heading("DoTs: Target panel"), nil)
+    s.DDT_DOTS_HEALTH.set(true)
+    s.DDT_DOTS_OUTLINE.set(6)
+    for _, key in ipairs({"target", "focus", "list"}) do
+        equal(old.ddt.db.dots.panels[key].health, true, key .. " follows")
+        equal(old.ddt.db.dots.panels[key].outlineWidth, 6, key .. " follows")
+    end
+    equal(#old.messages, 0, "no error")
+end)
+
+test("WTF parity: the smart curse slot, its key binding button, and \"! Curse\" while DDT has the DoTs", function()
+    SPELLS[702] = "Curse of Weakness"
+    local ok, why = pcall(function()
+        local book = {{172, "Corruption"}, {702, "Curse of Weakness"}, {5782, "Fear"}, {710, "Banish"}}
+        local state = fixture({book = book})
+        local ddt, s = state.ddt, state.settings
+        assert(state.named.DyresDebuffTrackerSmartCurse, "the key binding's button")
+        equal(ddt.db.dots.curseMode, "last")
+        s.DDT_DOTS_CURSE_MODE.set("smart")
+        equal(ddt.db.dots.curseMode, "smart")
+        local macro
+        for _, each in ipairs(state.macros) do
+            if each.name == "! Curse" then macro = each end
+        end
+        assert(macro, "\"! Curse\" written")
+        contains(macro.body, "Curse of Weakness")
+        equal(ddt.db.macrosOwned["! Curse"], true, "kept per character")
+        -- The control macros off: deleted.
+        s.DDT_CONTROL_MACROS.set(false)
+        for _, each in ipairs(state.macros) do
+            assert(each.name ~= "! Curse", "deleted with the control macros")
+        end
+        -- WTF has the DoTs (an older WTF that claims): DDT writes nothing.
+        local wtf = fixture({book = book, loaded = {WarlockToolsForever = "1.10.1"}, before = function(st)
+            st.toolkit.ClaimOwner("dots:WARLOCK", "WarlockToolsForever", 10)
+        end})
+        wtf.settings.DDT_DOTS_CURSE_MODE.set("smart")
+        for _, each in ipairs(wtf.macros) do
+            assert(each.name ~= "! Curse", "WTF keeps its own")
+        end
+        -- WTF's tracker off: DDT has the DoTs, and writes it.
+        wtf.toolkit.SetOwnerEnabled("dots:WARLOCK", "WarlockToolsForever", false)
+        local found = false
+        for _, each in ipairs(wtf.macros) do
+            found = found or each.name == "! Curse"
+        end
+        assert(found, "written once DDT has the DoTs")
+        -- A Mage: no button.
+        local mage = fixture({className = "Mage", class = "MAGE", book = {{133, "Fireball"}}})
+        equal(mage.named.DyresDebuffTrackerSmartCurse, nil)
+    end)
+    SPELLS[702] = nil
+    assert(ok, why)
+end)
+
+test("WTF import: once, WTF's values win where WTF had the part; never written; one chat line", function()
+    local wtf = {
+        tracker = {enabled = true, theme = "compact", outlineWidth = 0, hideEmpty = true, health = true,
+            healthText = "both", plateDots = true, plateDotsOffset = 70, plateDotsOpacity = 60,
+            sizes = {compact = {iconSize = 30, nameWidth = 150, textScale = 120, namePosition = "right"},
+                bars = {barWidth = 420, lineHeight = 20, textScale = 90, namePosition = "below"}},
+            order = {"immolate", "corruption", "curse", "bane", "siphon", "control"},
+            colors = {corruption = "ff123456"}, panelColors = {target = "ff00ff00"},
+            panelOpacity = {list = 50}, show = {target = false}, onPlates = {control = true},
+            position = {point = "CENTER", relativePoint = "CENTER", x = 10, y = 20},
+            sections = {focus = {point = "TOP", relativePoint = "TOP", x = 1, y = -2}},
+            curseMode = "smart", curseMarker = false, lastCurse = "Curse of Agony", locked = true},
+        predict = {enabled = true, color = "green", fill = "solid", opacity = 40, outline = "none",
+            diesPlace = "left", diesX = 5, plateDiesY = -7},
+        control = {enabled = true, scale = 80, plateTimers = false, macros = true, markers = {banish = 3},
+            position = {point = "CENTER", relativePoint = "CENTER", x = -5, y = -6}},
+        announce = {fearGroup = true},
+    }
+    local before = {}
+    local function Snapshot(value, into)
+        for key, each in pairs(value) do
+            into[key] = type(each) == "table" and Snapshot(each, {}) or each
+        end
+        return into
+    end
+    Snapshot(wtf, before)
+    local state = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}, saved = {dots = {theme = "bars", grow = {list = "up"}}}})
+    local db = state.ddt.db
+    equal(db.toolsImported, true)
+    equal(db.dots.theme, "compact")
+    equal(db.dots.outlineWidth, 0)
+    equal(db.dots.hideEmpty, true)
+    equal(db.dots.healthText, "both")
+    equal(db.dots.plateDotsOffset, 70)
+    equal(db.dots.sizes.bars.barWidth, 420, "WTF's sizes, as they were")
+    equal(db.dots.sizes.compact.namePosition, "right")
+    equal(db.dots.trackerSize, false, "no percent overwrites them")
+    equal(db.dots.order[1], "immolate")
+    equal(db.dots.colors.corruption, "ff123456")
+    equal(db.dots.colors.curse, "ff9e40d9", "a color WTF lacked: the default")
+    equal(db.dots.panelColors.target, "ff00ff00")
+    equal(db.dots.panelOpacity.list, 50)
+    equal(db.dots.show.target, false)
+    equal(db.dots.onPlates.control, true)
+    equal(db.dots.position.x, 10)
+    equal(db.dots.sections.focus.y, -2)
+    equal(db.dots.curseMode, "smart")
+    equal(db.dots.curseMarker, false)
+    equal(db.dots.lastCurse, "Curse of Agony")
+    equal(db.dots.grow.list, "up", "DDT's own keys stay")
+    equal(db.dots.locked, nil, "WTF's lock copy is left")
+    equal(db.predict.color, "green")
+    equal(db.predict.fill, "solid")
+    equal(db.predict.diesX, 5)
+    equal(db.predict.plateDiesY, -7)
+    equal(db.control.scale, 80)
+    equal(db.control.plateTimers, false)
+    equal(db.control.markers.banish, 3)
+    equal(db.control.position.x, -5)
+    assert(state.said("Copied your DoT tracker"), "one chat line")
+    -- Never written: WTF's table is as it was, and DDT holds no reference into it.
+    local after = Snapshot(wtf, {})
+    local function Same(a, b, path)
+        for key, value in pairs(a) do
+            if type(value) == "table" then
+                Same(value, b[key], path .. "." .. key)
+            else
+                equal(b[key], value, path .. "." .. key)
+            end
+        end
+    end
+    Same(before, after, "wtf")
+    Same(after, before, "wtf")
+    assert(db.dots.sizes ~= wtf.tracker.sizes and db.dots.position ~= wtf.tracker.position, "copies")
+    -- The engines read the copied values.
+    equal(state.ddt.dotTracker.theme, "compact")
+    -- Once: a second login does not copy again.
+    wtf.tracker.theme = "bars"
+    local again = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}, saved = db})
+    equal(again.ddt.db.dots.theme, "compact", "not copied twice")
+    equal(again.said("Copied your DoT tracker"), false)
+end)
+
+test("WTF import: a part WTF had off keeps DDT's values; macros always come; not a Warlock, nothing", function()
+    local wtf = {tracker = {enabled = false, theme = "compact"}, predict = {enabled = false, color = "green"},
+        control = {enabled = false, scale = 60, macros = false, markers = {banish = 2}}}
+    local state = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}, saved = {dots = {theme = "bars"}, predict = {color = "red"},
+        control = {scale = 120}}})
+    local db = state.ddt.db
+    equal(db.dots.theme, "bars", "DDT's tracker showed: its values stay")
+    equal(db.dots.enabled, true)
+    equal(db.predict.color, "red")
+    equal(db.control.scale, 120)
+    equal(db.control.macros, false, "WTF kept the macros: its switch comes")
+    equal(db.control.markers.banish, 2)
+    equal(db.toolsImported, true)
+    -- No WTF saved variables: marked done, no line.
+    local none = fixture()
+    equal(none.ddt.db.toolsImported, true)
+    equal(none.said("Copied your"), false)
+    -- A Mage with WTF's table (an alt's folder): nothing copied.
+    local mage = fixture({className = "Mage", class = "MAGE", book = {{133, "Fireball"}},
+        wtf = {tracker = {theme = "compact"}}})
+    equal(mage.ddt.db.dots.theme, "bars")
+    equal(mage.said("Copied your"), false)
+    -- A profile copy counts as done.
+    local copied = fixture()
+    copied.ddt.db.toolsImported = false
+    local ns = copied.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Warlock", parts = {DyresDebuffTracker = {dots = {}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(copied.ddt.db.toolsImported, true)
+end)
+
+test("Tools import waits while the Tools AddOn still claims, then runs once at its handover version", function()
+    local wtf = {tracker = {enabled = true, theme = "compact"}}
+    local old = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.10.1"}})
+    equal(old.ddt.db.toolsImported, false, "WTF 1.10 still has the parts: wait")
+    equal(old.ddt.db.dots.theme, "bars")
+    equal(old.said("Copied your"), false)
+    local unreadable = fixture({wtf = wtf, loaded = {WarlockToolsForever = "dev"}})
+    equal(unreadable.ddt.db.toolsImported, false, "an unreadable version waits too")
+    -- WTF 1.11.0 a day later: the copy runs with what WTF 1.10 last saved.
+    wtf.tracker.theme = "compact"
+    local new = fixture({wtf = wtf, saved = old.ddt.db, loaded = {WarlockToolsForever = "1.11.0"}})
+    equal(new.ddt.db.toolsImported, true)
+    equal(new.ddt.db.dots.theme, "compact")
+    assert(new.said("Copied your DoT tracker, damage prediction, and crowd-control settings from Warlock Tools "
+        .. "Forever"), "one line")
+end)
+
+test("WTF import: the Fear, Banish, Enslave, and Howl messages and texts come over; WTF's credit becomes DDT's", function()
+    local credit = " - via Warlock Tools Forever (WTF)"
+    local wtf = {announce = {enabled = true, channel = "say", fearGroup = true,
+        fearGroupText = "Fearing >> %T <<. Let it run" .. credit, banishGroup = false, banishGroupText = "Moon on %T",
+        enslaveGroup = true, howlGroup = true, summonGroup = true}}
+    local state = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}})
+    local control = state.ddt.db.control
+    equal(control.announce.fear, true)
+    equal(control.texts.fear, "Fearing >> %T <<. Let it run - via Dyre's Debuff Tracker")
+    equal(control.announce.banish, false)
+    equal(control.texts.banish, "Moon on %T", "the player's own text as written")
+    equal(control.announce.enslave, true)
+    equal(control.announce.howl, true)
+    contains(control.texts.howl, "Dyre's Debuff Tracker", "no WTF text: DDT's default")
+    equal(control.say, true, "WTF's Say channel")
+    equal(control.summonGroup, nil, "WTF's own messages stay in WTF")
+    -- WTF's master switch off silenced them all.
+    wtf.announce.enabled = false
+    local off = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}}).ddt.db.control
+    equal(off.announce.fear, false)
+    equal(off.announce.howl, false)
+end)
+
+test("WTF's smart curse key moves to DDT's binding, once, out of combat; a DDT key stays", function()
+    local function WithBindings(keys, combat)
+        return function(state)
+            state.bindings, state.saves = keys, 0
+            state.combat = combat
+            state.env.GetBindingKey = function(command)
+                local list = {}
+                for key, bound in pairs(state.bindings) do
+                    if bound == command then list[#list + 1] = key end
+                end
+                table.sort(list)
+                return unpack(list)
+            end
+            state.env.SetBinding = function(key, command) state.bindings[key] = command end
+            state.env.GetCurrentBindingSet = function() return 2 end
+            state.env.SaveBindings = function(set) state.saves = state.saves + 1; state.savedSet = set end
+        end
+    end
+    local wtfCommand = "CLICK WarlockToolsForeverSmartCurse:LeftButton"
+    local ddtCommand = "CLICK DyresDebuffTrackerSmartCurse:LeftButton"
+    local state = fixture({before = WithBindings({F = wtfCommand, ["SHIFT-F"] = wtfCommand})})
+    equal(state.bindings.F, ddtCommand)
+    equal(state.bindings["SHIFT-F"], ddtCommand)
+    equal(state.saves, 1)
+    equal(state.savedSet, 2, "saved to the current set")
+    assert(state.said("Smart curse key (F, SHIFT-F)"), "said once")
+    -- DDT's binding has a key: nothing changes.
+    local kept = fixture({before = WithBindings({F = wtfCommand, G = ddtCommand})})
+    equal(kept.bindings.F, wtfCommand)
+    equal(kept.saves, 0)
+    -- No key at all: nothing bound, nothing saved, nothing said.
+    local none = fixture({before = WithBindings({})})
+    equal(next(none.bindings), nil)
+    equal(none.saves, 0)
+    equal(none.said("Smart curse key"), false)
+    -- In combat at login: when combat ends.
+    local fight = fixture({before = WithBindings({F = wtfCommand}, true)})
+    equal(fight.bindings.F, wtfCommand, "not in combat")
+    fight.combat = false
+    emit(fight, "PLAYER_REGEN_ENABLED")
+    equal(fight.bindings.F, ddtCommand, "after combat")
+    equal(fight.saves, 1, "saved once, after combat")
+    -- A Mage: nothing.
+    local mage = fixture({className = "Mage", class = "MAGE", book = {{133, "Fireball"}},
+        before = WithBindings({F = wtfCommand})})
+    equal(mage.bindings.F, wtfCommand)
+end)
+
+test("the next WTF's macros are adopted in place: same index, so action bars keep them", function()
+    local macros = {{name = "! Curse", body = "x"}, {name = "Mine", body = "y"}, {name = "! Fear", body = "WTF's"},
+        {name = "! Banish", body = "WTF's"}}
+    local state = fixture({macros = macros, loaded = {WarlockToolsForever = "1.11.0"}})
+    equal(state.macros[3].name, "! Fear", "same index")
+    equal(state.macros[4].name, "! Banish", "same index")
+    assert(state.macros[3].body ~= "WTF's", "rewritten in place")
+    equal(state.macros[2].name, "Mine", "the player's own macro untouched")
+    assert(state.said("keeps your \"! Fear\" macro now"), "said")
+end)
+
+test("MTF import: the Polymorph bar's settings, macro, moon, and message come over once at MTF 1.6.0", function()
+    local mage = {className = "Mage", class = "MAGE", book = {{133, "Fireball"}, {118, "Polymorph"}}}
+    local function Mage(extra)
+        local options = {}
+        for key, value in pairs(mage) do options[key] = value end
+        for key, value in pairs(extra) do options[key] = value end
+        return fixture(options)
+    end
+    local mtf = {polymorph = {enabled = true, scale = 80, width = 300, height = 20, textScale = 120, opacity = 60,
+        mark = false, macro = true, position = {point = "CENTER", relativePoint = "CENTER", x = 3, y = 4}},
+        announce = {polymorphGroup = false, polymorphGroupText = "Sheeping %T"}, conjure = {macros = true}}
+    local waiting = Mage({mtf = mtf, loaded = {MageToolsForever = "1.5.1"}})
+    equal(waiting.ddt.db.toolsImported, false, "MTF 1.5 still has the bar")
+    local state = Mage({mtf = mtf, loaded = {MageToolsForever = "1.6.0"}})
+    local control = state.ddt.db.control
+    equal(control.scale, 80)
+    equal(control.width, 300)
+    equal(control.barHeight, 20)
+    equal(control.textScale, 120)
+    equal(control.opacity, 60)
+    equal(control.position.x, 3)
+    equal(control.markers.polymorph, 0, "no moon")
+    equal(control.macros, true)
+    equal(control.announce.polymorph, false)
+    equal(control.texts.polymorph, "Sheeping %T")
+    assert(state.said("Copied your Polymorph bar settings from Mage Tools Forever"), "one line")
+    equal(mtf.polymorph.height, 20, "MTF's table is never written")
+    equal(mtf.polymorph.mark, false)
+    -- MTF's bar off: DDT's bar showed, its bar values stay; the macro and moon still come.
+    local off = Mage({mtf = {polymorph = {enabled = false, width = 300, mark = true, macro = false}},
+        loaded = {MageToolsForever = "1.6.0"}}).ddt.db.control
+    equal(off.width, 200, "DDT's own")
+    equal(off.position, nil, "DDT's own place")
+    -- MTF's bar never moved: it stays at MTF's default place.
+    local unmoved = Mage({mtf = {polymorph = {enabled = true}}, loaded = {MageToolsForever = "1.6.0"}}).ddt.db.control
+    equal(unmoved.position.y, 60, "MTF's default place")
+    equal(off.macros, false)
+    equal(off.markers.polymorph, 5, "the moon")
+end)
+
+test("the crowd-control bar's look: width, bar height, text size, opacity; a Mage's bar is MTF's", function()
+    local state = fixture()
+    local s, db, ddt = state.settings, state.ddt.db, state.ddt
+    for _, name in ipairs({"WIDTH", "BARHEIGHT", "TEXTSCALE", "OPACITY", "SCALE"}) do
+        local setting = s["DYRE_DYRESDEBUFFTRACKER_CONTROL_" .. name]
+        assert(setting, "the " .. name .. " slider")
+        equal(setting.category, "Crowd control")
+    end
+    -- The defaults draw the Toolkit's own look.
+    local look = ddt.ControlLook()
+    equal(look.width, 200)
+    equal(look.header, 18)
+    equal(look.line, 16)
+    equal(look.icon, 14)
+    equal(look.alpha, 1)
+    equal(#ddt.controlTracker.rows, 5, "a Warlock's five rows")
+    db.control.width, db.control.barHeight, db.control.textScale, db.control.opacity = 300, 20, 150, 50
+    look = ddt.ControlLook()
+    equal(look.width, 300)
+    equal(look.header, 27)
+    equal(look.icon, 18)
+    equal(look.alpha, 0.5)
+    local bad = fixture({saved = {control = {width = 999, barHeight = 2, textScale = 83, opacity = "x"}}}).ddt.db.control
+    equal(bad.width, 400)
+    equal(bad.barHeight, 10)
+    equal(bad.textScale, 85)
+    equal(bad.opacity, 100)
+    -- A Mage: one row, MTF's purple, the spell's name on the bar.
+    local mage = fixture({className = "Mage", class = "MAGE", book = {{133, "Fireball"}, {118, "Polymorph"}}})
+    equal(#mage.ddt.controlTracker.rows, 1, "one Polymorph at a time")
+    local mlook = mage.ddt.ControlLook()
+    equal(mlook.color[1], 0.75)
+    equal(mlook.label, true)
+end)
+
+test("handover: DDT steps aside for a WTF that claims, in either load order, and takes over when it stops", function()
+    -- WTF first (it claims before DDT's login).
+    local first = fixture({loaded = {WarlockToolsForever = "1.10.1"}, before = function(st)
+        for _, kind in ipairs({"dots", "control", "macros", "announce"}) do
+            st.toolkit.ClaimOwner(kind .. ":WARLOCK", "WarlockToolsForever", 10)
+        end
+    end})
+    equal(first.ddt.dotTracker:IsOwner(), false)
+    equal(first.ddt.KindStatus("dots"), "Warlock Tools Forever")
+    equal(first.ddt.KindStatus("control"), "Warlock Tools Forever")
+    -- DDT first (WTF claims after DDT's login).
+    local second = fixture({loaded = {WarlockToolsForever = "1.10.1"}})
+    equal(second.ddt.dotTracker:IsOwner(), true, "DDT's until WTF claims")
+    for _, kind in ipairs({"dots", "control", "macros", "announce"}) do
+        second.toolkit.ClaimOwner(kind .. ":WARLOCK", "WarlockToolsForever", 10)
+    end
+    equal(second.ddt.dotTracker:IsOwner(), false, "WTF's claim wins after")
+    equal(second.ddt.KindStatus("control"), "Warlock Tools Forever")
+    -- The next WTF claims nothing: DDT has everything, loaded or not.
+    local next = fixture({loaded = {WarlockToolsForever = "1.11.0"}})
+    equal(next.ddt.yieldsTo, nil)
+    equal(next.ddt.dotTracker:IsOwner(), true)
+    equal(next.ddt.KindStatus("dots"), "ours")
+    equal(next.ddt.KindStatus("control"), "ours")
+    equal(next.toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), true)
+    equal(next.ddt.PRIORITY, 5, "DDT keeps priority 5")
 end)
 
 -- Dyre's Toolkit Profile (Toolkit 2.10.0; John, 2026-11-17: "one place to go

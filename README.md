@@ -29,13 +29,51 @@ Compatibility).
   by default): turn off a panel you do not need, for example the Target
   panel when your target frame already shows your DoTs. It needs a Dyre's
   Toolkit newer than 2.10.2; with an older one the checkboxes do not show.
-- Optional dots on nameplates: one per DoT, colored while it is up.
+- **Panels**: the Target, Focus, and Others panels each have their own
+  settings (Dyre's Toolkit 2.13.0 or later): show the panel, mob health and
+  its text, the frame, the outline (Target and Focus), grow, size, color,
+  and opacity, with a Reset button each. With an older Toolkit one set of
+  these settings is for all panels.
+- **Show panel frame** (on by default): turn it off to remove the
+  background and border behind each mob's name and DoTs. It needs a Dyre's
+  Toolkit newer than 2.12.0; with an older one the checkbox does not show.
+- **Outline width** (0 to 20 pixels, default 3): the colored outline around
+  the Target and Focus panels; 0 removes it.
+- Optional dots on nameplates: one per DoT, colored while it is up, with
+  their height and opacity, and a switch for each DoT's dot.
+- Each look's own sizes: Compact's icon size, name width, and text size;
+  Bars' bar width, line height, and text size; and the name's place.
+  **Reset size** puts the look back.
+- **Panels**: each panel's color (its outline and health fill) and opacity.
+- **Each DoT**: its place in the row (pick another DoT and the two swap),
+  its color on the bars and on nameplate dots. **Reset order and colors**.
+- **Curse slot** (Warlock): Last used, or the **Smart curse** (Tongues on a
+  mob with mana, else Elements, else Weakness; Shift, Ctrl, and Alt pick
+  one), with its letter on the icon, the "! Curse" macro, and a key binding.
+
+## Moving from Warlock Tools Forever
+
+Your Warlock's DoT tracker, damage prediction, and crowd-control bar are
+kept here now, with "! Fear", "! Banish", "! Seduction", "! Curse", and the
+Fear, Banish, Enslave Demon, and Howl of Terror group messages. When Warlock
+Tools Forever 1.11.0 hands them over, the settings you had there are copied
+here once, and a chat line says so. A part you had turned off there keeps
+this AddOn's own settings. Your macros stay on your action bars. Your Smart
+curse key moves to this AddOn's binding once.
+
+## Moving from Mage Tools Forever
+
+The Polymorph bar is kept here now, as it worked in Mage Tools Forever, with
+"! Polymorph" and its group message. When Mage Tools Forever 1.6.0 hands it
+over, your bar's settings are copied here once.
 
 ## Damage to come, and DIES
 
 - A striped block on the mob's health bar, as wide as the damage your DoTs
   still have to deal: on your target frame, on nameplates, and on the
   tracker's rows.
+- Its look: **Block fill** (stripes, solid, or the bar's texture), **Block
+  color**, **Block opacity**, and **Block outline**.
 - **DIES** and a red skull when that damage is at least the health left.
   Pick its place on the target frame and on nameplates, or leave it on Auto.
 - It learns each DoT's real tick as it ticks (your talents, spell power,
@@ -57,6 +95,8 @@ Compatibility).
   pick on the mob (through `/tm`).
 - **Tell your group**: a party or raid message as you cast, per spell, off
   by default. "Say" is an option.
+- The bar's **Bar size**, **Bar width**, **Bar height**, **Text size**, and
+  **Opacity**, with **Reset size**. A Mage's bar is one Polymorph bar.
 
 ## Mage: frozen and chilled
 

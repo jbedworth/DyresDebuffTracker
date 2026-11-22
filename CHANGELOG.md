@@ -1,5 +1,64 @@
 # Changelog
 
+## 1.4.0
+
+### Features
+
+- The DoTs page has a **Panels** section with one part each for the
+  **Target**, **Focus**, and **Others** panels. Each panel has its own
+  switch, **Show mob health** and **Health text**, **Show panel frame**,
+  **Outline width** (Target and Focus), **Grow**, **Tracker size** and the
+  look's sizes and name position, color, opacity, and a **Reset** button.
+  Your current settings become each panel's starting values. With a Dyre's
+  Toolkit older than 2.13.0 the page keeps one set of these settings for
+  all panels.
+- Warlocks: Dyre's Debuff Tracker is now the home of your DoT tracker, DoT
+  damage prediction, and crowd-control bar. Every setting Warlock Tools
+  Forever had for them is here too: each DoT's color and place in the row,
+  its dot on nameplates, each panel's color and opacity, the sizes of each
+  look (icon size, name width, bar width, line height, text size, name
+  position), the nameplate dots' height and opacity, the curse slot's smart
+  curse with its letter, the "! Curse" macro and its key binding (Key
+  Bindings, Dyre's Debuff Tracker), and the block's fill, opacity, and
+  outline. These rows are on the DoTs page for every class, except the curse
+  slot, which is for Warlocks.
+- Warlocks: when Warlock Tools Forever 1.11.0 hands these parts over, your
+  Warlock Tools Forever settings for them are copied here once, and a chat
+  line says so: the tracker, the prediction, the bar, the "! Fear",
+  "! Banish", "! Seduction", and "! Curse" macros (kept in place, so your
+  action bars keep them), and the Fear, Banish, Enslave Demon, and Howl of
+  Terror group messages with their texts. A part you had turned off in
+  Warlock Tools Forever keeps this AddOn's own settings. Warlock Tools
+  Forever's settings are not changed. Your Smart curse key moves to this
+  AddOn's "Smart curse (Warlock)" binding at your first login, out of
+  combat, unless that binding already has a key.
+- Mages: Dyre's Debuff Tracker is now the home of the Polymorph bar. It
+  works as Mage Tools Forever's did: one bar, its purple, your focus first
+  (on Classic Era the mob under your mouse, else your target), the time
+  left as text where no unit shows the mob, and the click whenever you know
+  Polymorph. When Mage Tools Forever 1.6.0 hands it over, your bar's place,
+  size, width, bar height, text size, and opacity, "! Polymorph", the moon,
+  and the Polymorph group message are copied here once.
+- Every class: the crowd-control bar has Bar width, Bar height, Text size,
+  and Opacity on the Crowd control page, with Reset size. The defaults keep
+  today's look.
+- Show only the DoTs (GitHub issue 1): two new settings for each panel.
+  "Show panel frame" (on by default): turn it off to remove the background
+  and border behind each mob's name and DoTs, at once, also in combat. It
+  needs a Dyre's Toolkit with this option (newer than 2.12.0); with an
+  older one the checkbox does not show. "Outline width" (0 to 20 pixels,
+  default 3): the colored outline around the Target and Focus panels; 0
+  removes it. A change in combat applies when combat ends.
+
+### Fixes
+
+- The DoTs page's sliders show their number (Outline width showed none, so
+  3 could look like 0).
+
+### Other changes
+
+- **What moved:** from Warlock Tools Forever into Dyre's Debuff Tracker: the DoT tracker, the nameplate DoT dots, the DoT damage prediction, the smart curse with its key, the crowd-control bar, the "! Fear", "! Banish", "! Seduction" and "! Curse" macros, and the Fear, Banish, Enslave Demon and Howl of Terror group messages. From Mage Tools Forever: the Polymorph bar, "! Polymorph" and the Polymorph group message. Your settings come with them.
+
 ## 1.3.0
 
 ### Features

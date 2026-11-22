@@ -13,6 +13,27 @@ local NO_CONTROL = "Your class has no crowd control here yet."
 local THEMES = {{"compact", "Compact"}, {"bars", "Bars"}}
 local GROW_CHOICES = {{"down", "Down"}, {"up", "Up"}}
 local HEALTH_TEXTS = {{"none", "None"}, {"number", "Number"}, {"percent", "Percent"}, {"both", "Number and percent"}}
+-- Warlock Tools Forever's tracker settings, moved here (John, via the lead,
+-- 2026-11-20: "This includes DoT Colors, tracker panels, etc."), with WTF's
+-- labels, so a WTF player finds them by the same names.
+local PANEL_NAMES = {{"target", "Target"}, {"focus", "Focus"}, {"list", "Others"}}
+local SIZE_LABELS = {iconSize = "Icon size", nameWidth = "Name width", textScale = "Text size",
+    barWidth = "Bar width", lineHeight = "Line height"}
+local SIZE_TIPS = {nameWidth = "The room the name has beside the icons (name Left or Right): the row grows or "
+    .. "shrinks with it. A longer name is cut with \"...\". Above or below the icons, the name spans the row."}
+local NAME_POSITION_LABELS = {left = "Left", right = "Right", above = "Above", below = "Below"}
+local FILLS = {{"stripes", "Stripes"}, {"solid", "Solid"}, {"bar", "Bar texture"}}
+local OUTLINES = {{"none", "None"}, {"solid", "Solid"}}
+local CURSE_MODES = {{"last", "Last used"}, {"smart", "Smart curse"}}
+local SMART_CURSE_HELP = "Smart curse: with no modifier, Curse of Tongues on a mob with mana, else Curse of the "
+    .. "Elements, else Curse of Weakness, chosen out of combat as your target changes. Shift casts Weakness, Ctrl "
+    .. "Tongues (Weakness if you do not know Tongues), Alt Recklessness. The \"! Curse\" macro and the Smart curse "
+    .. "key binding (Key Bindings, Dyre's Debuff Tracker) cast it too."
+
+-- A slider's value as whole-number text.
+function DDT.WholeLabel(value)
+    return string.format("%d", math.floor((tonumber(value) or 0) + 0.5))
+end
 
 local function HasSettingsAPI()
     if type(Settings) ~= "table" or type(Settings.VarType) ~= "table" then
@@ -46,6 +67,39 @@ local function Nest(child, parent, predicate)
         child:SetParentInitializer(parent, predicate)
     end
     return child
+end
+
+-- Shown only while the chosen look is this one (the list checks it again on
+-- each setting change).
+local function ShowFor(initializer, predicate)
+    if initializer and type(initializer.AddShownPredicate) == "function" then
+        initializer:AddShownPredicate(predicate)
+    end
+    return initializer
+end
+
+-- A color swatch (AARRGGBB, as WTF's), where the client has one.
+local function Swatch(category, variable, name, table, key, default, tooltip, onChange)
+    if type(Settings.CreateColorSwatch) ~= "function" then
+        return nil
+    end
+    local setting = Settings.RegisterProxySetting(category, variable, Settings.VarType.String, name, default,
+        function() return table()[key] end,
+        function(value)
+            table()[key] = DDT.SanitizeColor(value, default)
+            onChange()
+        end)
+    return Settings.CreateColorSwatch(category, setting, tooltip)
+end
+
+-- A button row (pinned Blizzard_SettingControls.lua: CreateSettingsButtonInitializer).
+local function Button(layout, name, text, onClick, tooltip)
+    if type(CreateSettingsButtonInitializer) == "function" and type(layout) == "table"
+            and type(layout.AddInitializer) == "function" then
+        local initializer = CreateSettingsButtonInitializer(name, text, onClick, tooltip, true)
+        layout:AddInitializer(initializer)
+        return initializer
+    end
 end
 
 -- A checkbox for table()[key]; onChange runs after the value is stored.
@@ -96,7 +150,9 @@ local function Slider(category, variable, name, table, key, default, low, high, 
         end)
     local options = Settings.CreateSliderOptions(low, high, 1)
     if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
-        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right)
+        -- Always a number: with no formatter the slider shows no value, and a
+        -- thumb at 3 of 0-20 reads as 0 (John's Outline width, 2026-11-21).
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, DDT.WholeLabel)
     end
     return Settings.CreateSlider(category, setting, options, tooltip)
 end
@@ -109,7 +165,16 @@ local function TrackerSize(category, tooltip, onChange)
     local spec = DDT.TRACKER_SIZE
     local setting = Settings.RegisterProxySetting(category, "DDT_DOTS_TRACKER_SIZE", Settings.VarType.Number,
         "Tracker size", spec.default,
-        function() return DDT.db.dots.trackerSize end,
+        function()
+            local dots = DDT.db.dots
+            if dots.trackerSize ~= false then
+                return dots.trackerSize
+            end
+            -- Sizes set one by one: the nearest percent of the chosen look.
+            local theme = dots.theme == "bars" and "bars" or "compact"
+            local key = theme == "bars" and "barWidth" or "iconSize"
+            return DDT.SanitizeTrackerSize(dots.sizes[theme][key] * 100 / DDT.SizeDefault(theme, key))
+        end,
         function(value)
             if type(value) == "number" then
                 DDT.db.dots.trackerSize = DDT.SanitizeTrackerSize(value)
@@ -172,6 +237,154 @@ local function FrostSection(category, layout)
         "The arcs' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshFrost), master, On)
 end
 
+-- A percent slider for a panel's Tracker size (DDT.TRACKER_SIZE); false
+-- (sizes set one by one) shows the nearest percent of the chosen look.
+local function PanelTrackerSize(category, variable, panel, tooltip, onChange)
+    if type(Settings.CreateSlider) ~= "function" or type(Settings.CreateSliderOptions) ~= "function" then
+        return nil
+    end
+    local spec = DDT.TRACKER_SIZE
+    local setting = Settings.RegisterProxySetting(category, variable, Settings.VarType.Number, "Tracker size",
+        spec.default,
+        function()
+            local own = panel()
+            if own.trackerSize ~= false then
+                return own.trackerSize
+            end
+            local theme = DDT.db.dots.theme == "bars" and "bars" or "compact"
+            local key = theme == "bars" and "barWidth" or "iconSize"
+            return DDT.SanitizeTrackerSize(own.sizes[theme][key] * 100 / DDT.SizeDefault(theme, key))
+        end,
+        function(value)
+            if type(value) == "number" then
+                local own = panel()
+                own.trackerSize = DDT.SanitizeTrackerSize(value)
+                DDT.ApplyTrackerSize(own)
+                onChange()
+            end
+        end)
+    local options = Settings.CreateSliderOptions(spec.min, spec.max, spec.step)
+    if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, function(value)
+            return string.format("%d%%", value)
+        end)
+    end
+    local initializer = Settings.CreateSlider(category, setting, options, tooltip)
+    if DDT.toolkit and type(DDT.toolkit.AddDefaultTick) == "function" then
+        DDT.toolkit.AddDefaultTick(initializer, spec)
+    end
+    return initializer
+end
+
+-- The Panels section (the Toolkit's TRACKER_PANEL_OPTIONS; John, 2026-11-21:
+-- "The panel settings need to be organized by the panel they control, and
+-- each needs it's own config (size, border width, etc.) In the "Panels"
+-- section, with a sub-section heading for Target, Focus, and Other"; "The
+-- show mob health checkbox, and text config ... are missing from the
+-- Target/Focus/Others boxes"). One sub-section per panel, each with its own
+-- switch, health, frame, outline (Target and Focus: the list has none),
+-- grow, sizes, color, opacity, and Reset.
+local function PanelSections(category, layout, master, On, Changed, Rebuilt)
+    local toolkit = DDT.toolkit
+    Heading(layout, "Panels")
+    for _, entry in ipairs(PANEL_NAMES) do
+        local key, name = entry[1], entry[2]
+        local id = "DDT_PANEL_" .. key:upper() .. "_"
+        local function Panel() return DDT.db.dots.panels[key] end
+        local function PanelOn() return DDT.db.dots.enabled end
+        Heading(layout, name .. " panel")
+        if type(toolkit.TRACKER_PANELS) == "table" then
+            local function Show() return DDT.db.dots.show end
+            Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_SHOW_" .. key:upper(), "Show " .. name .. " panel", Show, key,
+                true, key == "list" and "The panel for the other mobs you DoT. Your target and focus stay out of it."
+                    or "The panel for your " .. key .. "'s DoTs.", Changed), "dots"), master, On)
+        end
+        local health = Nest(OnlyWhenOurs(Flag(category, id .. "HEALTH", "Show mob health", Panel, "health", false,
+            "The line with the mob's name is its health bar, with the damage to come drawn on it. This panel only. "
+                .. "A change in combat applies when combat ends.", Rebuilt), "dots"), master, On)
+        Nest(OnlyWhenOurs(Choice(category, id .. "HEALTH_TEXT", "Health text", Panel, "healthText", "none",
+            HEALTH_TEXTS, "Text after the mob's name: its health as a number, a percent, or both. This panel only.",
+            Rebuilt), "dots"), health, function() return PanelOn() and Panel().health end)
+        if toolkit.TRACKER_FRAME == true then
+            Nest(OnlyWhenOurs(Flag(category, id .. "FRAME", "Show panel frame", Panel, "frame", true,
+                "The background and border behind each mob's name and DoTs in this panel. Turn it off to see only "
+                    .. "the name and the DoTs. Applies at once, also in combat.", Changed), "dots"), master, On)
+        end
+        if key ~= "list" and type(toolkit.TRACKER_OUTLINE) == "table" then
+            local outline = DDT.OUTLINE_WIDTH
+            Nest(OnlyWhenOurs(Slider(category, id .. "OUTLINE", "Outline width", Panel, "outlineWidth",
+                outline.default, outline.min, outline.max, "The colored outline around the " .. name .. " panel, "
+                    .. "in pixels: " .. outline.min .. " to " .. outline.max .. ". 0 draws none. A change in combat "
+                    .. "applies when combat ends.", Rebuilt), "dots"), master, On)
+        end
+        if type(toolkit.TRACKER_GROW) == "table" then
+            local function Grow() return DDT.db.dots.grow end
+            Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_GROW_" .. key:upper(), "Grow", Grow, key, "down",
+                GROW_CHOICES, "Up puts the first DoT where you placed the panel and the next ones above it (Bars "
+                    .. "look). Down puts them below it." .. (key == "list" and " Up also stacks new mobs upward, in "
+                    .. "both looks." or "") .. " The name keeps its place.", Rebuilt), "dots"), master, On)
+        end
+        Nest(OnlyWhenOurs(PanelTrackerSize(category, id .. "TRACKER_SIZE", Panel, "Bars: the length of this panel's "
+            .. "DoT bars. Compact: the size of its DoT icons. From 75% to 125%. A change in combat applies when "
+            .. "combat ends.", Rebuilt), "dots"), master, On)
+        for _, theme in ipairs({"compact", "bars"}) do
+            local function ThisLook() return DDT.db.dots.theme == theme end
+            local function Sizes() return Panel().sizes[theme] end
+            local look = theme == "bars" and "Bars" or "Compact"
+            for _, spec in ipairs(DDT.SIZE_SPECS[theme]) do
+                local label = SIZE_LABELS[spec.key]
+                local setting = Settings.RegisterProxySetting(category, id .. theme:upper() .. "_" .. spec.key:upper(),
+                    Settings.VarType.Number, label, spec.default,
+                    function() return Sizes()[spec.key] end,
+                    function(value)
+                        if type(value) == "number" then
+                            local saved = {}
+                            for each, current in pairs(Sizes()) do
+                                saved[each] = current
+                            end
+                            saved[spec.key] = value
+                            Panel().sizes[theme] = DDT.SanitizeSizes(theme, saved)
+                            Panel().trackerSize = false
+                            Rebuilt()
+                        end
+                    end)
+                if type(Settings.CreateSlider) == "function" and type(Settings.CreateSliderOptions) == "function" then
+                    local options = Settings.CreateSliderOptions(spec.min, spec.max, spec.step)
+                    if type(MinimalSliderWithSteppersMixin) == "table"
+                            and type(options.SetLabelFormatter) == "function" then
+                        options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
+                            and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
+                    end
+                    Nest(ShowFor(OnlyWhenOurs(Settings.CreateSlider(category, setting, options,
+                        (SIZE_TIPS[spec.key] or ("This panel's " .. label:lower() .. " in the " .. look .. " look."))
+                            .. " A change in combat applies when combat ends."), "dots"), ThisLook), master, On)
+                end
+            end
+            local positions = {}
+            for _, position in ipairs(DDT.NAME_POSITIONS[theme]) do
+                positions[#positions + 1] = {position, NAME_POSITION_LABELS[position]}
+            end
+            Nest(ShowFor(OnlyWhenOurs(Choice(category, id .. theme:upper() .. "_NAMEPOSITION", "Name position", Sizes,
+                "namePosition", DDT.DEFAULT_NAME_POSITION[theme], positions,
+                "Where the mob's name sits in this panel's rows.", Rebuilt), "dots"), ThisLook), master, On)
+        end
+        local function PanelColors() return DDT.db.dots.panelColors end
+        local function PanelOpacity() return DDT.db.dots.panelOpacity end
+        Nest(OnlyWhenOurs(Swatch(category, "DDT_DOTS_PANEL_COLOR_" .. key:upper(), "Panel color", PanelColors, key,
+            DDT.PANEL_COLORS[key], key == "list"
+                and "The row border and health fill of the other mobs' rows. It changes at once, also in combat."
+                or "The outline and health fill of the " .. name .. " panel. It changes at once, also in combat.",
+            Changed), "dots"), master, On)
+        Nest(OnlyWhenOurs(Slider(category, "DDT_DOTS_PANEL_OPACITY_" .. key:upper(), "Panel opacity", PanelOpacity,
+            key, 100, 10, 100, "How solid the " .. name .. " panel is, rows and all, in percent. It changes at once; "
+                .. "its bars follow when combat ends.", DDT.RefreshPanelOpacity), "dots"), master, On)
+        Button(layout, name .. " panel", "Reset " .. name .. " panel", function()
+            DDT.ResetPanel(key)
+        end, "This panel back to the defaults: shown, no health, its frame and outline, its size, color, and "
+            .. "opacity. Its place stays.")
+    end
+end
+
 local function DotsPage(parent)
     local category, layout = Settings.RegisterVerticalLayoutSubcategory(parent, "DoTs")
     DDT.dotsCategory = category
@@ -185,12 +398,66 @@ local function DotsPage(parent)
         "A row for your target, one for your focus, and up to eight more for the other mobs you DoT, each with "
             .. "a timer bar per DoT.", Changed), "dots")
     local function On() return DDT.db.dots.enabled end
+    -- Per-panel settings (TRACKER_PANEL_OPTIONS): the size, health, frame,
+    -- outline, switch, and grow rows move into each panel's sub-section.
+    -- With an older Toolkit the tracker-wide rows stay as they were.
+    local perPanel = DDT.PerPanel()
     Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_THEME", "Theme", Dots, "theme", "bars", THEMES,
         "Compact: a row with the name and an icon per DoT. Bars: the name above one bar per DoT.", Rebuilt), "dots"),
         master, On)
+    if not perPanel then
     Nest(OnlyWhenOurs(TrackerSize(category, "Bars: the length of the DoT bars. Compact: the size of the DoT "
         .. "icons. From 75% to 125%; one setting for both looks. A change in combat applies when combat ends.",
         Rebuilt), "dots"), master, On)
+    -- Each look's own sizes and name place (WTF's, moved here). A change here
+    -- sets the sizes one by one: Tracker size then shows the nearest percent.
+    for _, theme in ipairs({"compact", "bars"}) do
+        local function ThisLook() return DDT.db.dots.theme == theme end
+        local function Sizes() return DDT.db.dots.sizes[theme] end
+        local look = theme == "bars" and "Bars" or "Compact"
+        for _, spec in ipairs(DDT.SIZE_SPECS[theme]) do
+            local label = SIZE_LABELS[spec.key]
+            local setting = Settings.RegisterProxySetting(category, "DDT_DOTS_" .. theme:upper() .. "_"
+                .. spec.key:upper(), Settings.VarType.Number, label, spec.default,
+                function() return Sizes()[spec.key] end,
+                function(value)
+                    if type(value) == "number" then
+                        local saved = {}
+                        for name, current in pairs(Sizes()) do
+                            saved[name] = current
+                        end
+                        saved[spec.key] = value
+                        DDT.db.dots.sizes[theme] = DDT.SanitizeSizes(theme, saved)
+                        DDT.db.dots.trackerSize = false
+                        Rebuilt()
+                    end
+                end)
+            if type(Settings.CreateSlider) == "function" and type(Settings.CreateSliderOptions) == "function" then
+                local options = Settings.CreateSliderOptions(spec.min, spec.max, spec.step)
+                if type(MinimalSliderWithSteppersMixin) == "table" and type(options.SetLabelFormatter) == "function" then
+                    options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
+                        and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
+                end
+                Nest(ShowFor(OnlyWhenOurs(Settings.CreateSlider(category, setting, options,
+                    (SIZE_TIPS[spec.key] or ("The DoT tracker's " .. label:lower() .. " in the " .. look .. " look."))
+                        .. " A change in combat applies when combat ends."), "dots"), ThisLook), master, On)
+            end
+        end
+        local positions = {}
+        for _, key in ipairs(DDT.NAME_POSITIONS[theme]) do
+            positions[#positions + 1] = {key, NAME_POSITION_LABELS[key]}
+        end
+        Nest(ShowFor(OnlyWhenOurs(Choice(category, "DDT_DOTS_" .. theme:upper() .. "_NAMEPOSITION", "Name position",
+            Sizes, "namePosition", DDT.DEFAULT_NAME_POSITION[theme], positions,
+            "Where the mob's name sits in each row.", Rebuilt), "dots"), ThisLook), master, On)
+    end
+    Button(layout, "Tracker size", "Reset size", function()
+        local dots = DDT.db.dots
+        dots.sizes[dots.theme] = DDT.SanitizeSizes(dots.theme, nil)
+        dots.trackerSize = false
+        Rebuilt()
+    end, "Back to the chosen look's own sizes and name position.")
+    end
     -- Hide empty DoT slots (treadpool, a player, 2026-11-17: "Would be cleaner
     -- if it only showed the DoTs that are actively ticking"; John: "Yes, build
     -- it"): only with a Toolkit that has it (TRACKER_HIDE_EMPTY).
@@ -199,6 +466,7 @@ local function DotsPage(parent)
             "Show a DoT only while it is on the mob. The empty places stay, so the DoTs do not move. The target "
                 .. "and focus rows then do not recast a DoT when you click them.", Rebuilt), "dots"), master, On)
     end
+    if not perPanel then
     -- Show or hide each panel (a player, 2026-11-19: "Is there a way to
     -- disable the target dot window or hide it?"; John: "a 3 panels toggle
     -- show/off, default to show. A checkbox is fine for now."): only with a
@@ -211,6 +479,22 @@ local function DotsPage(parent)
                     and "The panel for the other mobs you DoT. Your target and focus stay out of it."
                     or "The panel for your " .. panel[1] .. "'s DoTs.", Changed), "dots"), master, On)
         end
+    end
+    -- GitHub issue 1 (a player, 2026-11-20: "When a target is selected, a
+    -- frame appears with a purple border. I'd like to hide all of that and only
+    -- show the debuff bars."; John: "Build parts 1 and 2"). The frame: only
+    -- with a Toolkit that has it (TRACKER_FRAME). The outline: TRACKER_OUTLINE.
+    if DDT.toolkit and DDT.toolkit.TRACKER_FRAME == true then
+        Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_FRAME", "Show panel frame", Dots, "frame", true,
+            "The background and border behind each mob's name and DoTs. Turn it off to see only the name and the "
+                .. "DoTs. Applies at once, also in combat.", Changed), "dots"), master, On)
+    end
+    if DDT.toolkit and type(DDT.toolkit.TRACKER_OUTLINE) == "table" then
+        local outline = DDT.OUTLINE_WIDTH
+        Nest(OnlyWhenOurs(Slider(category, "DDT_DOTS_OUTLINE", "Outline width", Dots, "outlineWidth",
+            outline.default, outline.min, outline.max, "The colored outline around the Target and Focus panels, "
+                .. "in pixels: " .. outline.min .. " to " .. outline.max .. ". 0 draws none. A change in combat "
+                .. "applies when combat ends.", Rebuilt), "dots"), master, On)
     end
     -- Grow direction per panel: only with a Toolkit that has it (TRACKER_GROW).
     if DDT.toolkit and type(DDT.toolkit.TRACKER_GROW) == "table" then
@@ -229,9 +513,102 @@ local function DotsPage(parent)
     Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_HEALTH_TEXT", "Health text", Dots, "healthText", "none",
         HEALTH_TEXTS, "Text after the mob's name.", Rebuilt), "dots"), health,
         function() return DDT.db.dots.enabled and DDT.db.dots.health end)
-    Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_PLATES", "Show DoT dots on nameplates", Dots, "plateDots", false,
-        "In combat, a dot above each enemy nameplate for each of your DoTs, colored while it is up.", Changed),
-        "dots"), master, On)
+    end
+    local plates = Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_PLATES", "Show DoT dots on nameplates", Dots,
+        "plateDots", false, "In combat, a dot above each enemy nameplate for each of your DoTs, colored while it "
+            .. "is up.", Changed), "dots"), master, On)
+    local function PlatesOn() return DDT.db.dots.enabled and DDT.db.dots.plateDots end
+    Nest(OnlyWhenOurs(Slider(category, "DDT_DOTS_PLATES_OFFSET", "Dot height above nameplates", Dots,
+        "plateDotsOffset", 50, 0, 120, "How far above the nameplate the dots sit, to clear other nameplate "
+            .. "AddOns.", Changed), "dots"), plates, PlatesOn)
+    Nest(OnlyWhenOurs(Slider(category, "DDT_DOTS_PLATES_OPACITY", "Nameplate dot opacity", Dots, "plateDotsOpacity",
+        100, 10, 100, "How solid the dots above each nameplate are, in percent. It changes at once, also in combat.",
+        DDT.RefreshPlateDotsOpacity), "dots"), plates, PlatesOn)
+    if perPanel then
+        PanelSections(category, layout, master, On, Changed, Rebuilt)
+    else
+    -- Each panel's color and opacity (WTF's, moved here).
+    Heading(layout, "Panels")
+    local function PanelColors() return DDT.db.dots.panelColors end
+    local function PanelOpacity() return DDT.db.dots.panelOpacity end
+    for _, panel in ipairs(PANEL_NAMES) do
+        local key, name = panel[1], panel[2]
+        Nest(OnlyWhenOurs(Swatch(category, "DDT_DOTS_PANEL_COLOR_" .. key:upper(), name .. " panel color",
+            PanelColors, key, DDT.PANEL_COLORS[key], key == "list"
+                and "The row border and health fill of the other mobs' rows. It changes at once, also in combat."
+                or "The outline and health fill of the " .. name .. " panel. It changes at once, also in combat.",
+            Changed), "dots"), master, On)
+        Nest(OnlyWhenOurs(Slider(category, "DDT_DOTS_PANEL_OPACITY_" .. key:upper(), name .. " panel opacity",
+            PanelOpacity, key, 100, 10, 100, "How solid the " .. name .. " panel is, rows and all, in percent. It "
+                .. "changes at once; its bars follow when combat ends.", DDT.RefreshPanelOpacity), "dots"),
+            master, On)
+    end
+    end
+    -- Each DoT's place, color, and nameplate dot (WTF's DoTs page, moved here).
+    local slots = DDT.classData.dots or {}
+    if #slots > 0 then
+        Heading(layout, "Each DoT")
+        local choices = {}
+        for _, slot in ipairs(slots) do
+            choices[#choices + 1] = {slot.key, slot.label}
+        end
+        for index = 1, #slots do
+            -- A slot picked here swaps places with the one that was there.
+            local setting = Settings.RegisterProxySetting(category, "DDT_DOTS_ORDER_" .. index,
+                Settings.VarType.String, "DoT " .. index, slots[index].key,
+                function() return DDT.db.dots.order[index] end,
+                function(value)
+                    local order = DDT.db.dots.order
+                    for other, key in ipairs(order) do
+                        if key == value and other ~= index then
+                            order[other], order[index] = order[index], value
+                            break
+                        end
+                    end
+                    Rebuilt()
+                end)
+            if type(Settings.CreateDropdown) == "function"
+                    and type(Settings.CreateControlTextContainer) == "function" then
+                Nest(OnlyWhenOurs(Settings.CreateDropdown(category, setting, function()
+                    local container = Settings.CreateControlTextContainer()
+                    for _, choice in ipairs(choices) do
+                        container:Add(choice[1], choice[2])
+                    end
+                    return container:GetData()
+                end, "The DoT in place " .. index .. " on each row. Pick another and the two swap places. A "
+                    .. "change in combat applies when combat ends."), "dots"), master, On)
+            end
+        end
+        local function Colors() return DDT.db.dots.colors end
+        local function OnPlates() return DDT.db.dots.onPlates end
+        for _, slot in ipairs(slots) do
+            Nest(OnlyWhenOurs(Swatch(category, "DDT_DOTS_COLOR_" .. slot.key:upper(), slot.label .. " color",
+                Colors, slot.key, DDT.SanitizeColor(slot.color, "ffffffff"), "The color of " .. slot.label
+                    .. " on the tracker's bars and on nameplate dots. A change in combat reaches the bars when "
+                    .. "combat ends.", DDT.RefreshDotColors), "dots"), master, On)
+            Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_ONPLATE_" .. slot.key:upper(), slot.label
+                .. " dot on nameplates", OnPlates, slot.key, slot.dot ~= false, "Show a " .. slot.label
+                    .. " dot in the nameplate bubble.", Changed), "dots"), plates, PlatesOn)
+        end
+        Button(layout, "Each DoT", "Reset order and colors", function()
+            local dots = DDT.db.dots
+            local clean = DDT.SanitizeDB({}, DDT.classData).dots
+            dots.order, dots.colors = clean.order, clean.colors
+            DDT.RefreshDotColors()
+        end, "Back to the DoTs' own order and colors.")
+    end
+    -- The Warlock's smart curse (WTF's, moved here; Toolkit 2.7.0).
+    if DDT.class == "WARLOCK" and DDT.dotTracker and type(DDT.dotTracker.ApplySmartCurse) == "function" then
+        Heading(layout, "Curse slot")
+        local mode = Nest(OnlyWhenOurs(Choice(category, "DDT_DOTS_CURSE_MODE", "Curse slot click", Dots,
+            "curseMode", "last", CURSE_MODES, "What a click on the target or focus row's Curse slot casts. Last "
+                .. "used: the curse you cast last. " .. SMART_CURSE_HELP .. " A change in combat applies when "
+                .. "combat ends.", DDT.ApplySmartCurse), "dots"), master, On)
+        Nest(OnlyWhenOurs(Flag(category, "DDT_DOTS_CURSE_MARKER", "Show the smart curse letter", Dots,
+            "curseMarker", true, "With Smart curse, a letter on the Curse slot's icon for that mob's best curse: "
+                .. "T Tongues, E Elements, W Weakness. It changes also in combat.", DDT.ApplySmartCurse), "dots"),
+            mode, function() return DDT.db.dots.enabled and DDT.db.dots.curseMode == "smart" end)
+    end
     if DDT.predictor then
         Heading(layout, "Damage to come")
         local predict = OnlyWhenOurs(Flag(category, "DDT_PREDICT", "Show Predictive DoT Damage", Predict, "enabled",
@@ -247,8 +624,17 @@ local function DotsPage(parent)
         for _, preset in ipairs(DDT.PREDICT_COLORS) do
             colors[#colors + 1] = {preset.key, preset.label}
         end
+        Nest(OnlyWhenOurs(Choice(category, "DDT_PREDICT_FILL", "Block fill", Predict, "fill", "stripes", FILLS,
+            "Stripes: diagonal stripes. Solid: one flat color. Bar texture: the texture of the bar it sits on. The "
+                .. "same look on the target frame, nameplates, and DoT tracker rows.", Changed), "dots"),
+            predict, PredictOn)
         Nest(OnlyWhenOurs(Choice(category, "DDT_PREDICT_COLOR", "Block color", Predict, "color", "purple", colors,
             "The block's color.", Changed), "dots"), predict, PredictOn)
+        Nest(OnlyWhenOurs(Slider(category, "DDT_PREDICT_OPACITY", "Block opacity", Predict, "opacity", 70, 20, 100,
+            "How solid the block is, in percent.", Changed), "dots"), predict, PredictOn)
+        Nest(OnlyWhenOurs(Choice(category, "DDT_PREDICT_OUTLINE", "Block outline", Predict, "outline", "solid",
+            OUTLINES, "A thin line around the block, a little lighter than its color.", Changed), "dots"),
+            predict, PredictOn)
         -- Where DIES goes (John, 2026-11-09): target and focus frames, then nameplates.
         local function DiesOn() return DDT.db.predict.enabled and DDT.db.predict.dies end
         local function PlateDiesOn() return DiesOn() and DDT.db.predict.plates end

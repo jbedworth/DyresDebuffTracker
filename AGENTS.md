@@ -172,8 +172,10 @@ character knows, at its best rank; none for a spell it does not know.
   not a number gives 100, else rounded to a step and clamped). It is the
   source of `sizes.bars.barWidth` (290 x percent) and
   `sizes.compact.iconSize` (22 x percent), rounded to whole pixels
-  (`DDT.ApplyTrackerSize`, at every SanitizeDB and slider change); the name
-  width, line height, and text scale stay. The slider ("Tracker size" on
+  (`DDT.ApplyTrackerSize`, at every SanitizeDB and slider change, except
+  while `trackerSize` is false: the sizes were set one by one, by the
+  per-look sliders or the WTF import); the name width, line height, and
+  text scale stay. The slider ("Tracker size" on
   the DoTs page, the gold default mark through the Toolkit's
   `AddDefaultTick`) calls the tracker's `Rebuild`, which the Toolkit runs
   out of combat (else at PLAYER_REGEN_ENABLED). No Toolkit change.
@@ -185,8 +187,7 @@ character knows, at its best rank; none for a spell it does not know.
   else is "down"). The Toolkit's DoT tracker reads `store.grow` live
   (Toolkit 2.9.2, `DyresToolkit.TRACKER_GROW`). Three dropdowns on the
   DoTs page, "Grow: Target", "Grow: Focus", "Grow: Others", after Tracker
-  size (DDT has no name position setting on its pages; `namePosition` is
-  only saved), each calling the tracker's `Rebuild` (out of combat, else at
+  size (the name position is a per-look row since the WTF move), each calling the tracker's `Rebuild` (out of combat, else at
   combat's end). Shown only when `TRACKER_GROW` exists (Toolkit 2.9.1 lacks
   it); the saved value is kept and repaired either way.
   `DDT.TOOLKIT_VERSION` stays 2.9.1: the gate hides only the Grow settings
@@ -211,8 +212,48 @@ character knows, at its best rank; none for a spell it does not know.
   lacks it); a change calls `RefreshDots(false)`, which calls the tracker's
   `Refresh` (the Toolkit reads `store.show` live). The saved value is kept
   and repaired either way.
-  DDT has no "Panel opacity" setting on its pages (`panelOpacity` is only
-  saved, 10 to 100), so its pages do not mention it.
+- Panel frame and outline (a player, 2026-11-20, GitHub issue 1: "When a
+  target is selected, a frame appears with a purple border. I'd like to
+  hide all of that and only show the debuff bars."; John: "Build parts 1
+  and 2"): `db.dots.frame`, boolean, default true (only false hides), and
+  `db.dots.outlineWidth`, whole pixels 0-20, default 3 (`DDT.OUTLINE_WIDTH`,
+  the Toolkit's `TRACKER_OUTLINE`), both repaired in SanitizeDB and in the
+  profile. "Show panel frame" shows only when `DyresToolkit.TRACKER_FRAME`
+  is true (unreleased Toolkit; 2.12.0 lacks it); a change calls
+  `RefreshDots(false)`, which now also calls the tracker's
+  `ApplyPanelColors` when it exists (at once, also in combat). "Outline
+  width" shows when `TRACKER_OUTLINE` exists (every supported Toolkit) and
+  rebuilds. Before this, only WTF offered the outline width.
+- Per-panel settings (John, 2026-11-21: "1) The show mob health checkbox,
+  and text config (health #, %, etc.) settings are missing from the
+  Target/Focus/Others boxes. 2) The panel settings need to be organized by
+  the panel they control, and each needs it's own config (size, border
+  width, etc.) In the "Panels" section, with a sub-section heading for
+  Target, Focus, and Other."): `db.dots.panels` = {target, focus, list},
+  each {health, healthText, frame, outlineWidth, trackerSize (percent or
+  false), sizes {compact, bars}} (`DDT.SanitizePanel`, in SanitizeDB; a
+  missing or bad value is the tracker-wide one, so older saves, older
+  profiles, and the WTF import, which clears `panels`, start each panel
+  from the tracker-wide values). The Toolkit reads `store.panels`
+  (`TRACKER_PANEL_OPTIONS`, Toolkit 2.13.0; `DDT.PerPanel()`). With it the
+  page has "Panels" and one heading per panel ("Target panel", "Focus
+  panel", "Others panel": `PanelSections` in Options.lua) with the switch
+  (`DDT_DOTS_SHOW_<KEY>`), `DDT_PANEL_<KEY>_HEALTH`, `_HEALTH_TEXT`,
+  `_FRAME`, `_OUTLINE` (Target and Focus only: the list has no outline),
+  Grow (`DDT_DOTS_GROW_<KEY>`), `_TRACKER_SIZE`, `_<LOOK>_<SIZE>`,
+  `_<LOOK>_NAMEPOSITION`, color and opacity (`DDT_DOTS_PANEL_COLOR_`/
+  `_OPACITY_<KEY>`), and "Reset <name> panel" (`DDT.ResetPanel`: the
+  panel's own settings, switch, grow, color, opacity; its place stays).
+  Tracker-wide rows that stay: Enable, Theme, Hide empty DoT slots, the
+  nameplate dots, Each DoT, the Curse slot, Damage to come. Without the
+  flag the page keeps the tracker-wide rows (Tracker size, sizes, Reset
+  size, panel switches, frame, outline, Grow, health, panel colors and
+  opacity), and `DDT.MirrorPanels` (in `RefreshDots`) copies the
+  tracker-wide values into each panel on each change, so a later Toolkit
+  update starts from them; not at login, so per-panel values saved with a
+  newer Toolkit stay. Sliders always show a number (`DDT.WholeLabel`):
+  without a formatter the client shows no value (John's Outline width read
+  0 while 3 was saved, 2026-11-21).
 - Profile (John, 2026-11-17: "start working on the global "all Dyre addons
   settings" syncing with DT's profile, so there is one place to go to
   persist your profile"; the design is the Toolkit's docs/PROFILES.md, John
@@ -221,12 +262,14 @@ character knows, at its best rank; none for a spell it does not know.
   `RegisterProfilePart` (2.10.0); with an older Toolkit nothing changes, and
   `DDT.TOOLKIT_VERSION` is not raised. `current` is DyresDebuffTrackerDB
   (`DDT.db`). Key audit of DyresDebuffTrackerDB:
-  - In the profile: `dots` (enabled, theme, sizes, trackerSize, grow, show, hideEmpty, order,
-    health, healthText, position and sections (the panels' places),
-    panelOpacity, onPlates, plateDots and its offset and opacity),
+  - In the profile: `dots` (enabled, theme, sizes, trackerSize, grow, show,
+    hideEmpty, frame, outlineWidth, panels, order, colors, panelColors, curseMode,
+    curseMarker, health, healthText, position and sections (the panels'
+    places), panelOpacity, onPlates, plateDots and its offset and opacity),
     `predict` (every setting, with the DIES places and offsets), and
     `control` (enabled, plateTimers, macros, say, position, scale, markers,
-    announce, texts), and `frost` (the Mage's arcs: enabled, offset, size).
+    announce, texts, width, barHeight, textScale, opacity), `frost` (the Mage's arcs: enabled, offset, size), and
+    `toolsImported` (the class Tools AddOn's settings copied once).
   - `characterKeys` = {"macrosOwned"}: the names of the character macros
     this AddOn keeps (the control tracker's keeper `owned`); macros are per
     character, so another character's list must not land here.
@@ -286,9 +329,80 @@ character knows, at its best rank; none for a spell it does not know.
   per holder, else `plate`). It reads only our own holders, never an aura or
   an engine button. Not a Mage: `frost none (Mage only)`; a Mage whose
   client lacks a part: `frost off: this client lacks ...`.
-- Not built yet: the other DoT sizes, panel opacity and colors, DoT order, and
-  announcement text editors (the engines read them from the store; the
-  defaults are WTF's), and the in-client check.
+- The Warlock move from WTF (John, via the lead, 2026-11-20: "Users of WTF
+  should manage their DoT tracking features in DDT. The WTF DoT's settings
+  pages should simply redirect users to DDT ... This includes DoT Colors,
+  tracker panels, etc."; "Yes, full move"). DDT is the one home of the
+  Warlock's DoT tracker, prediction, and control bar; MTF stays as it is.
+  - Parity: every setting on WTF's DoT Tracker, DoTs, and Control pages has
+    a DDT row (the "WTF parity" tests list them): each look's sizes and name
+    position (`DDT_DOTS_<LOOK>_<KEY>`, shown only for the chosen look, with
+    Reset size; a change sets `dots.trackerSize = false`, so no percent
+    overwrites them, and Tracker size then shows the nearest percent), the
+    plate dots' offset and opacity, each panel's color (`dots.panelColors`,
+    WTF's defaults, `DDT.PANEL_COLORS`) and opacity, each slot's place
+    (`DDT_DOTS_ORDER_<n>`, a pick swaps), color (`dots.colors`, AARRGGBB, the
+    slot's ClassData color by default) and nameplate dot, Reset order and
+    colors, the curse slot (Warlock: `dots.curseMode` "last"/"smart",
+    `dots.curseMarker`), and the block's fill, opacity, and outline. The
+    tracker gets `slotColor`/`panelColor` (`DDT.SlotColor`, `DDT.PanelColor`,
+    read live). Left out: WTF's "How Fear and your focus work" chat button
+    (help text, not a setting) and WTF's announcement page (part 4 below).
+  - The smart curse: the tracker's `names.smartCurse` =
+    "DyresDebuffTrackerSmartCurse" (Warlock only), Bindings.xml (CLICK
+    binding, header DYRESDEBUFFTRACKER, "Smart curse (Warlock)"), and "! Curse"
+    (`DDT.ApplyCurseMacro`): a Toolkit macro keeper sharing
+    `db.macrosOwned`, written only while DDT owns `dots:WARLOCK` and
+    `control.macros` is on (OnOwnerChanged reapplies it); deleted when the
+    macros are off or Weakness is unknown (only one DDT wrote).
+  - The import (`DDT.ImportFromTools`, Core.lua, from `DDT.Start` after the
+    profile joins and before the engines; DBR 1.13.0's model): once per
+    character (`db.toolsImported`, in the profile; a profile copy sets it),
+    from the class's Tools AddOn (`DDT.TOOLS_IMPORT`: Warlock from
+    `WarlockToolsForeverDB`, Mage from `MageToolsForeverDB`; read only; deep
+    copies). It waits (not marked) while that AddOn is loaded at a version
+    older than its handover (WTF 1.11.0, MTF 1.6.0) or unreadable: the
+    older one still claims and its values can still change. Not loaded:
+    marked done. WTF (keys `DDT.WTF_KEYS`, the WTF session's
+    wtf-1.11.0-ddt-import-keys.md): a part wins only where WTF had it on
+    (`tracker.enabled`, `predict.enabled`, `control.enabled` not false): its
+    claim at 10 then beat DDT's 5, so DDT's values were never used; with it
+    off DDT's part showed, so DDT's stay. The macros and markers always come
+    (WTF owned `macros:WARLOCK` whatever its bar switch), and so do the
+    Fear, Banish, Enslave, and Howl messages (`announce.<x>Group` and the
+    master `announce.enabled`) and texts (WTF's credit suffix becomes
+    DDT's), and Say (`announce.channel`). WTF's sizes set `trackerSize =
+    false`. MTF (`DDT.MTF_KEYS`, MTF 1.5.1's `db.polymorph`, kept raw by
+    1.6.0): the bar's enabled, position, scale, opacity, width, height (DDT
+    `barHeight`), textScale while MTF's bar was on; `macro` -> `macros` and
+    `mark` false -> `markers.polymorph = 0` always; `announce.polymorphGroup`
+    (only while MTF's bar was on, as MTF sent it) and `polymorphGroupText`.
+    One chat line when something came (MTF says its own line too).
+  - The Smart curse key (`DDT.MoveCurseBinding`, Warlock, each login through
+    the Toolkit's `OutOfCombat`): while `CLICK
+    WarlockToolsForeverSmartCurse:LeftButton` has a key and DDT's `CLICK
+    DyresDebuffTrackerSmartCurse:LeftButton` none, each key is set to DDT's
+    (`SetBinding`, then `SaveBindings(GetCurrentBindingSet())`), with one
+    line. It runs at the first DDT login, while WTF 1.10.x still defines its
+    binding (WTF 1.11.0 removes it; whether the client keeps an undefined
+    command's key is not verified).
+  - Macros: the Toolkit keeper adopts an existing macro by name with
+    `EditMacro` at the same index, so action bar slots keep it ("keeps your
+    macro now", once); a test checks the index.
+  - The control bar's look, every class (MTF's Polymorph settings):
+    `db.control.width` 120-400 step 10 (200), `barHeight` 10-40 (16),
+    `textScale` 50-200 step 5 (100), `opacity` 10-100 step 5 (100)
+    (`DDT.CONTROL_LOOK`, `DDT.CONTROL_OPACITY`), repaired in SanitizeDB, in
+    the profile. `DDT.ControlLook()` is the engine's `look`; the widget
+    shows the sliders (AddWidgetSettings), measures the frame from them,
+    and a change applies the look at once and rebuilds the slots once the
+    slider rests (0.2 s, MTF's rule). The defaults draw the Toolkit's own
+    look. A class's own behavior: `DDT.CONTROL_CLASS` (Mage: MTF 1.5.1's
+    one row, purple, label, find order, locks, countdown, clickThrough,
+    fixedClick "polymorph").
+  - Ownership: DDT keeps priority 5 and still steps aside for a WTF that
+    claims at 10, in either load order (the claims decide); the next WTF
+    claims nothing, and DDT owns every Warlock kind.
 
 ## Dyre's Toolkit (required, through OptionalDeps)
 
@@ -331,13 +445,14 @@ character knows, at its best rank; none for a spell it does not know.
 - Install test builds only into
   `C:\Games\WoW\World of Warcraft\_forever_\Interface\AddOns` and
   `_classic_era_\Interface\AddOns` (never `_classic_beta_`), and cmp-check
-  them. Install only the TOC, the Lua files the TOC lists, the Textures
-  (Icon.tga, FrozenArc.tga, ChilledArc.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
+  them. Install only the TOC, the Lua files the TOC lists, Bindings.xml, the
+  Textures (Icon.tga, FrozenArc.tga, ChilledArc.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
 
 ## Project structure
 
 - Runtime: DyresDebuffTracker.toc, Core.lua, Engines.lua, Frost.lua,
-  Options.lua (loaded in that order), Textures/Icon.tga (the TOC icon), and
+  Options.lua (loaded in that order), Bindings.xml (the smart curse key
+  binding; the client loads it by name), Textures/Icon.tga (the TOC icon), and
   Textures/FrozenArc.tga and ChilledArc.tga (the Mage's arcs).
 - scripts/make_artwork.py: makes the logo (SVG, rendered to PNG with headless
   Chrome as the family's logos are), Textures/Icon.tga, the arcs

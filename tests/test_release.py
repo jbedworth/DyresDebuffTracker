@@ -36,7 +36,7 @@ class ReleaseTests(unittest.TestCase):
         self.base = Path(self.temp.name)
         self.source = self.base / "source"
         self.source.mkdir()
-        for name in ("DyresDebuffTracker.toc", "LICENSE"):
+        for name in ("DyresDebuffTracker.toc", "LICENSE") + builder.XML_FILES:
             # Git may check these templates out as CRLF on Windows. Fixture-only
             # conversion gives valid LF input without changing the real sources.
             (self.source / name).write_bytes((ROOT / name).read_bytes().replace(b"\r\n", b"\n"))
