@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.7.0
+
+### Features
+
+- **Winter's Chill stack chime on WoW: Forever** (Mages): a note when your
+  Winter's Chill goes on your target, and another note as each stack after
+  it goes on. The game plays the sounds, so they work in combat. WoW:
+  Forever does not let AddOns count the stacks in combat, so the notes do
+  not rise as they do on Classic Era: the first stack plays note 1 of your
+  note set, and each later stack its 3rd note. A stack that drops, or the
+  debuff ending, plays nothing. Another Mage's Winter's Chill on your
+  target may chime too. The same "Winter's Chill" rows as on Classic Era:
+  **Stack chime**, **Note set**, and **Test chime**. It needs Dyre's
+  Sounds. A change you make in combat applies when combat ends; turning it
+  off applies at once.
+- **Winter's Chill arc** (Mages, both clients): the five frost balls are now
+  one frosty ice arc of five segments, with small icicles, above the nameplate, in the same style as
+  the frozen and chilled arcs and on their curve. Empty segments are blue,
+  and one more turns white with each stack, up to 5; the game still lights
+  them, so they work in combat. **Height above nameplate** keeps its
+  default of 36, above the frozen and chilled arcs. **Restart the game client** after you update: `/reload` does not
+  load the new art (ChillArc.tga, ChillArcFill.tga).
+- **Winter's Chill needs the talent** (Mages): the arc and the stack chime
+  work only while you know the Winter's Chill talent (Frost, any rank).
+  Without it, no arc shows and no chime plays (on WoW: Forever, this also
+  stops another Mage's Winter's Chill from chiming for you). The settings
+  rows stay, greyed, and say that the talent is needed; **Preview** still
+  works, so you can place the arc first. Learning or removing the talent
+  applies at once, or when combat ends. If the game gives no way to read
+  your talents, the arc and the chime work as before.
+
 ## 1.6.0
 
 ### Features

@@ -438,7 +438,7 @@ function DDT.SanitizeDB(db, classData)
     db.brand = {enabled = Bool(brand.enabled, true),
         offset = Whole(brand.offset, DDT.BRAND_OFFSET.min, DDT.BRAND_OFFSET.max, DDT.BRAND_OFFSET.default),
         size = Whole(brand.size, DDT.BRAND_SIZE.min, DDT.BRAND_SIZE.max, DDT.BRAND_SIZE.default)}
-    -- The Mage's Winter's Chill balls (Frost.lua); kept for every class, used by Mages.
+    -- The Mage's Winter's Chill arc (Frost.lua); kept for every class, used by Mages.
     local chill = type(db.wintersChill) == "table" and db.wintersChill or {}
     db.wintersChill = {enabled = Bool(chill.enabled, true),
         offset = Whole(chill.offset, DDT.CHILL_OFFSET.min, DDT.CHILL_OFFSET.max, DDT.CHILL_OFFSET.default),
@@ -753,7 +753,7 @@ end
 
 local HELP = "/ddt opens the settings; /ddt reset puts the frames back; /ddt reset_focus checks the focus again; "
     .. "/ddt debug shows what the trackers see; /ddt preview brand shows the Demonic Brand pentagram on your "
-    .. "target (Warlocks, WoW: Forever); /ddt preview chill shows the Winter's Chill balls on your target (Mages)."
+    .. "target (Warlocks, WoW: Forever); /ddt preview chill shows the Winter's Chill arc on your target (Mages)."
 
 local function HandleCommand(message)
     local command, argument = (message or ""):lower():match("^%s*(%S*)%s*(%S*)")

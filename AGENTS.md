@@ -270,7 +270,7 @@ character knows, at its best rank; none for a spell it does not know.
     `control` (enabled, plateTimers, macros, say, position, scale, markers,
     announce, texts, width, barHeight, textScale, opacity), `frost` (the Mage's arcs: enabled, offset, size),
     `brand` (the Warlock's Demonic Brand pentagram: enabled, offset, size),
-    `wintersChill` (the Mage's Winter's Chill balls: enabled, offset, size,
+    `wintersChill` (the Mage's Winter's Chill arc: enabled, offset, size,
     chime, noteSet), `chimeImported` (DBR's chime settings copied once), and
     `toolsImported` (the class Tools AddOn's settings copied once).
   - `characterKeys` = {"macrosOwned"}: the names of the character macros
@@ -358,31 +358,63 @@ character knows, at its best rank; none for a spell it does not know.
   "Nameplate Personal Buffs/Debuffs"; Forever: Cone of Cold damage taken,
   Era: crit chance), warcraft.wiki.gg (5 stacks); not checked in client.
   Made for a Mage when `DDT.ChillKnown()` (`DDT.SpellKnown(12579)`), else
-  one chat line and `chill off: ...` in `/ddt debug`. `CHILL_LOOK`: 13 x 13
-  cells (`DDT.CHILL_CELL`), five balls (Textures/ChillBall.tga, BORDER,
-  tinted blue, `DDT.CHILL_COLORS.empty`), ball 1 white (ARTWORK, the same
-  art tinted white; shows whenever the engine shows the button, so a count
-  of 0 or 1 at one stack both read as one), and a StatusBar over balls 2 to
-  5 whose fill is Textures/ChillBalls.tga (four balls, 256 x 64, tinted
-  white; the game crops a status bar's fill as it fills, so whole balls
-  show: not checked in client, TESTING.md), handed to the engine's `SetApplicationBar(bar, {minApplications = 1,
+  one chat line and `chill off: ...` in `/ddt debug`. The look (DDT 1.7.0,
+  John via the lead, 2026-11-23: "a 5 part ice-arc above the mob's head,
+  similar to the effects we do for chilled and frozen, a little higher up,
+  and segmented into 5 parts instead of discreet balls"; it replaces 1.6.0's
+  balls) `CHILL_LOOK`: a 64 x 16 button, as the frozen and chilled arcs, five
+  12.8-pixel fifths (`DDT.CHILL_CELL` = 64 / 5): the whole arc
+  (Textures/ChillArc.tga, BORDER, SetAllPoints, tinted blue,
+  `DDT.CHILL_COLORS.empty`), segment 1 white (ARTWORK, the same art with
+  `SetTexCoord(0, 0.2, 0, 1)`, 12.8 x 16, tinted white; shows whenever the
+  engine shows the button, so a count of 0 or 1 at one stack both read as
+  one), and a StatusBar over segments 2 to 5 (51.2 x 16) whose fill is
+  Textures/ChillArcFill.tga (segments 2 to 5 drawn across the whole 256 x
+  64, tinted white; the game crops a status bar's fill as it fills, and no
+  segment's art comes within 3 texture pixels of a fifth's edge, so whole
+  segments show: not checked in client, TESTING.md; John, 2026-11-23: "Keep
+  the default at 36, make the arc look more frosty, with small icicle points
+  dripping down": four icicles per segment, inside its cell), handed to the engine's `SetApplicationBar(bar, {minApplications = 1,
   maxApplications = 5})`: the engine sets the range, the value (the stacks;
   in combat a secret the bar takes), and shows it from 1
   (Blizzard_CustomAuraButton.lua ApplyApplicationBar, Gethe 943764493e6b;
   one application bar per button). Each stack's fill ends between two
-  balls. Both TGAs are 64-pixel cells with a 49-pixel ball (10 of 13 in
-  game), made by scripts/make_artwork.py --chill (our own art); new TGA
-  files need a full client restart. No SetApplicationBar, or a failing
-  call: the bar hides (ball 1 only). Era's plain-Lua container
+  segments. Both TGAs are made by scripts/make_artwork.py --chill (SVG
+  through headless Chrome, as the arcs; our own art); new TGA files need a
+  full client restart. No SetApplicationBar, or a failing
+  call: the bar hides (segment 1 only). Era's plain-Lua container
   gates the bar from Toolkit 2.11.0; older: cell 1 only
   (`DDT.TOOLKIT_VERSION` stays 2.9.1). `db.wintersChill` = {enabled (true),
-  offset (0-60, 36: above the arcs' 33), size (50-200, 100)}, in SanitizeDB
+  offset (0-60, 36, John 2026-11-23: "Keep the default at 36"; clear of
+  the frozen arc at the defaults), size (50-200, 100)}, in SanitizeDB
   and the profile (`DDT.RefreshChill`). Options `ChillSection` after
   FrostSection: "Show", "Size", "Height above nameplate", "Preview"
   (`DDT.PreviewChill`; the preview frame's bar is set to
   `DDT.CHILL_PREVIEW` = 3; `look.Draw` gets a 4th argument, `preview`), and
   "Reset Winter's Chill". `/ddt preview chill`, and `/ddt preview` for a
   Mage.
+- Winter's Chill talent gate, Mage (John, 2026-11-23, via the lead: "make
+  sure this only shows if the player has the talent for it"). Frost.lua:
+  `DDT.CHILL_TALENTS` = 11180 (rank 1; TalentsForeverBook Data.lua: max 5,
+  node 105763, spell 11180; classicdb.ch spell=11180 Rank 1), 28592-28595
+  (ranks 2-5, classicdb.ch spell=28592..28595, Classic Era). Known: any ID
+  by IsPlayerSpell, C_SpellBook.IsSpellKnown, or IsSpellKnown (the order of
+  the Toolkit's Procs.lua `KnowsTalent`, a local there, so mirrored here),
+  else the talent's name (C_Spell.GetSpellName(11180), then
+  C_Spell.GetSpellInfo or GetSpellInfo by name) to an ID that is not the
+  debuff 12579. `DDT.ReadChillTalent()` is true, false, or nil (none of the
+  three APIs); `DDT.ChillTalentKnown()` is `known ~= false` (unreadable
+  shows, as before). Read at login (`DDT.StartChillTalent`, before the arc)
+  and on SPELLS_CHANGED, CHARACTER_POINTS_CHANGED, PLAYER_TALENT_UPDATE,
+  TRAIT_CONFIG_UPDATED, ACTIVE_TALENT_GROUP_CHANGED (each only when
+  `C_EventUtils.IsEventValid`, through pcall); in combat the last answer
+  stays and PLAYER_REGEN_ENABLED reads it again. A change calls
+  `DDT.RefreshChill` (arc and chime). The arc: `CreateArcs` spec `gate`
+  (in `On()`; the preview ignores it). The chime: `wanted` needs it on both
+  paths. Options: `NeedsTalent` greys Show, Size, Height, Stack chime, and
+  Note set (AddModifyPredicate) with the tooltip line "Needs the Winter's
+  Chill talent (Frost)."; Preview, Test chime, Reset stay active. `/ddt
+  debug`: `chill talent known|not known|unreadable`.
 - Winter's Chill stack chime, Mage (John, 2026-11-22, via the lead: "2,
   remove it, build it right in DDT"; DBR 1.13.3 removes its Era chime).
   Chime.lua, from DBR 1.9.0-1.13.2's Procs.lua design: the combat log
@@ -392,13 +424,26 @@ character knows, at its best rank; none for a spell it does not know.
   we do chimes, it should only be for the player's primary target"), ID 12579 or the spell's name (Classic's log
   gave ID 0); notes 1-4 rise, 5 is the set's held note
   (`DDT.CHILL_CHIME_SETS` bassoon/sax from Dyre's Sounds, sax fallback for
-  a Dyre's Sounds without bassoon). Gate: a Mage and the Toolkit's
-  `CombatLogUsable()` (an API gate; Forever refuses the log, so no Forever
-  chime and no rows: the lead holds Forever for John's answer to question
-  2; Forever's only path is `C_UnitAuras.AddAuraSound`, one fixed sound per
-  trigger (Added, ApplicationsIncreased), no stack condition, no source
-  filter, so it cannot rise and another Mage's debuff may chime: the lead
-  accepted that note for when it is built). The log is registered only
+  a Dyre's Sounds without bassoon). Paths (`DDT.ChillChimeMode()`, API
+  gates only, a Mage): "log" where the Toolkit's `CombatLogUsable()` is
+  true (Classic Era); else "aura" where `C_UnitAuras.AddAuraSound` and
+  `RemoveAuraSound` exist (Forever; DDT 1.7.0, John via the lead,
+  2026-11-23: "A: one fixed note"); else none (no rows). The aura path: two
+  registrations, unitToken "target", spellID 12579, outputChannel master,
+  throttle 0.5 s (`DDT.CHILL_CHIME_THROTTLE`; the API takes 0 to 5):
+  trigger Added plays the set's note 1, ApplicationsIncreased its 3rd note
+  (`DDT.CHILL_CHIME_AURA_NOTE`, DBR's COMBO_SECRET_INDEX rule); the file
+  from Dyre's Sounds `AuraSound(key)` (sax fallback). No stack condition and
+  no source filter in the API, so it cannot rise and another Mage's debuff
+  on your target may chime (lead accepted). Registered only out of combat
+  and outside an Encounter restriction (DBR's proc sound rule); else
+  `deferred`, applied at PLAYER_REGEN_ENABLED or
+  ADDON_RESTRICTION_STATE_CHANGED (registered only in the aura path, each
+  checked with `C_EventUtils.IsEventValid`). Off removes at once, also in
+  combat (RemoveAuraSound has no restriction flag), but waits out an
+  encounter. A note set change re-registers (the Note set row's callback).
+  No DBR wait on this path (DBR never chimed without the log). Test chime
+  and the Note set preview play the path's notes. The log is registered only
   while `db.wintersChill.chime` is on and DBR is not loaded at a version
   older than 1.13.3 (or unreadable): then one login line ("The Winter's
   Chill chime waits") and no second chime (lead's answer 4).
@@ -568,7 +613,7 @@ character knows, at its best rank; none for a spell it does not know.
   `_classic_era_\Interface\AddOns` (never `_classic_beta_`), and cmp-check
   them. Install only the TOC, the Lua files the TOC lists, Bindings.xml, the
   Textures (Icon.tga, FrozenArc.tga, ChilledArc.tga, BrandPentagram.tga,
-  BrandGlow.tga, ChillBall.tga, ChillBalls.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
+  BrandGlow.tga, ChillArc.tga, ChillArcFill.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
 
 ## Project structure
 
@@ -577,10 +622,11 @@ character knows, at its best rank; none for a spell it does not know.
   binding; the client loads it by name), Textures/Icon.tga (the TOC icon), and
   Textures/FrozenArc.tga and ChilledArc.tga (the Mage's arcs),
   BrandPentagram.tga and BrandGlow.tga (the Warlock's Demonic Brand), and
-  ChillBall.tga and ChillBalls.tga (the Mage's Winter's Chill balls).
+  ChillArc.tga and ChillArcFill.tga (the Mage's Winter's Chill arc).
 - scripts/make_artwork.py: makes the logo (SVG, rendered to PNG with headless
   Chrome as the family's logos are), Textures/Icon.tga, the arcs
-  (`--arcs`, plain Python), and the listing screenshot crops. Change the art there, not in its outputs; see
+  (`--arcs`), the Brand (`--brand`), the Winter's Chill arc (`--chill`), and
+  the listing screenshot crops. Change the art there, not in its outputs; see
   artwork/README.md.
 - docs/CURSEFORGE_LISTING.md: the listing text; artwork/: the logo, John's
   raw screenshots, and the crops.

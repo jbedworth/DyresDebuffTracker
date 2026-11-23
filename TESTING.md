@@ -59,10 +59,12 @@ LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
 - [ ] "Arc height", "Arc size", and the switch apply at once. A Warlock or
       other class has no "Frozen and chilled" rows.
 
-## In-client checks: Winter's Chill frost balls (Mage, both clients)
+## In-client checks: Winter's Chill arc (Mage, both clients)
 
 First: after you install, **restart the game client** (quit and start it).
-`/reload` does not load new TGA files (ChillBall.tga, ChillBalls.tga).
+`/reload` does not load new TGA files (ChillArc.tga, ChillArcFill.tga; DDT
+1.7.0 replaces the 1.6.0 balls with a five-segment ice arc, John,
+2026-11-23).
 The IDs come from web sources (Frost.lua names them; none checked in the
 client yet): Wowhead `forever/spell=11180` (the talent; its proc triggers
 12579), `forever/spell=12579` and `classic/spell=12579` (the debuff, 15 s,
@@ -74,29 +76,58 @@ Magic), and warcraft.wiki.gg "Winter's Chill" (5 stacks).
       AuraUtil.FindAuraByName("Winter's Chill", "target", "HARMFUL")`). Note
       `spellId` (expected 12579), `sourceUnit` (expected "player"; if not,
       the `HARMFUL|PLAYER` slot draws nothing: change the filter to
-      `HARMFUL`), and `applications` at 1 stack (0 or 1; both show one white ball)
+      `HARMFUL`), and `applications` at 1 stack (0 or 1; both show one white segment)
       and at 2 or more.
 - [ ] `/ddt debug`: the `chill` line shows `on=true`, `plates` at least 1,
       and in `anchors` your nameplate AddOn (or `Blizzard`).
-- [ ] Five blue balls show; ball 1 is white at one stack. Out of combat
-      and in combat: each new stack turns one more ball white, up to 5;
-      the white balls are round and whole (not squeezed or cut in half: the
-      game crops the bar's fill texture, not stretches it). The balls go
-      when the debuff ends (15 s). No Lua error. The frame rate does not
-      drop. The balls sit above the frozen and chilled
-      arcs and clear of the mob's name.
-- [ ] Cone of Cold on Forever uses the stacks: the balls go with them.
-- [ ] Another Mage's Winter's Chill shows no balls.
+- [ ] A blue arc of five segments shows; segment 1 is white at one stack.
+      Out of combat and in combat: each new stack turns one more segment
+      white, up to 5; each white segment is whole and lies exactly on its
+      blue one (not squeezed, not cut, no part of the next segment white:
+      the game crops the bar's fill texture, not stretches it). The arc
+      goes when the debuff ends (15 s). No Lua error. The frame rate does
+      not drop. The arc sits above the frozen and chilled arcs (the same
+      curve, a clear gap between them; about 9.5 pixels from the icicle
+      tips to the frozen arc at the defaults) and clear of the mob's name.
+      The small icicles under each segment read in blue and in white.
+- [ ] Cone of Cold on Forever uses the stacks: the segments go with them.
+- [ ] Another Mage's Winter's Chill shows no arc.
 - [ ] A Mage without the talent: nothing shows; the rows are still there.
 - [ ] Show, Size (shows "100%"), and Height above nameplate (shows "36")
       apply at once. Reset Winter's Chill puts back on, 100%, 36. The heading
       "Winter's Chill" follows "Frozen and chilled". Other classes have no
       such rows.
 - [ ] Preview: target a mob with its nameplate showing and press "Preview"
-      (or `/ddt preview chill`). Three of five balls are white. Size and
+      (or `/ddt preview chill`). Three of five segments are white. Size and
       Height change it at once. Press again, or change target: it goes.
-- [ ] Classic Era with Dyre's Toolkit older than 2.11.0: only the first ball
-      lights, at any stack count.
+- [ ] Classic Era with Dyre's Toolkit older than 2.11.0: only the first
+      segment lights, at any stack count.
+
+## In-client checks: the Winter's Chill talent gate (Mage, both clients)
+
+The arc and the chime work only while you know the talent (John,
+2026-11-23: "make sure this only shows if the player has the talent for
+it"). IDs: 11180 (rank 1; TalentsForeverBook Data.lua and classicdb.ch) and
+28592-28595 (ranks 2-5, classicdb.ch, Classic Era); on Forever only 11180 is
+known, and a Forever ID not listed is found by the talent's name. Read with
+IsPlayerSpell, C_SpellBook.IsSpellKnown, or IsSpellKnown (Dyre's Toolkit's
+Procs.lua order), out of combat, at login and on SPELLS_CHANGED and the
+talent events this client has. If none of the three APIs exists, the gate
+counts as known, so a broken check never hides the arc for everyone.
+
+- [ ] `/dump IsPlayerSpell(11180)` with the talent at rank 1 (and on Classic
+      Era at rank 5: `/dump IsPlayerSpell(28595)`): true. Without it: false.
+- [ ] With the talent: `/ddt debug` shows `chill talent known`; the arc and
+      the chime work as below.
+- [ ] Without the talent (a Mage with no Frost points, or reset your
+      talents): `chill talent not known`. No arc on a mob with another
+      Mage's Winter's Chill; no chime (Forever: `registered=false
+      sounds=0`). The Winter's Chill rows show greyed, and each tooltip says
+      "Needs the Winter's Chill talent (Frost)". Preview still shows the arc.
+- [ ] Learn the talent out of combat: the arc and the chime work at once,
+      with no /reload. Remove it (reset talents): they stop at once.
+- [ ] If `chill talent unreadable` ever shows, the arc and chime still work:
+      report it (the check found no API).
 
 ## In-client checks: Winter's Chill stack chime (Mage, Classic Era)
 
@@ -123,8 +154,31 @@ Procs.lua through 1.13.2), moved here.
       in Dyre's Buff Reminders, log in with Dyre's Buff Reminders 1.13.3:
       one chat line ("Copied your Winter's Chill chime settings"), and the
       same values here. Log in again: no second line.
-- [ ] WoW: Forever: no chime rows, and `/ddt debug` shows `chime off: no
-      combat log on this client`.
+
+## In-client checks: Winter's Chill stack chime (Mage, WoW: Forever)
+
+Needs Dyre's Sounds. The game plays the notes: `C_UnitAuras.AddAuraSound`
+on unitToken "target", ID 12579 (John, via the lead, 2026-11-23: "A: one
+fixed note"). Not yet seen in client.
+
+- [ ] `/ddt debug`: the `chime` line shows `chime aura on=true
+      registered=true sounds=2 deferred=false`.
+- [ ] Put Winter's Chill on your target: note 1 (Bassoon 1) when it goes
+      on, then the 3rd note (Bassoon 3) for each new stack up to 5. A
+      refresh at 5, a stack that drops, and the debuff ending play nothing.
+      No Lua error.
+- [ ] Your Winter's Chill on a mob that is not your target: no note. Then
+      target that mob and add a stack: the note plays (the sound follows
+      the "target" unit token).
+- [ ] Another Mage's Winter's Chill on your target can chime (no source
+      filter on this API): note whether it does.
+- [ ] Note set Sax: Sax 1, then Sax 3. Change the note set in combat: the
+      old notes play until combat ends, then the new ones.
+- [ ] Stack chime off (also in combat): no notes at once, and
+      `registered=false sounds=0`.
+- [ ] In a boss encounter: a change waits (`deferred=true`) and applies at
+      the encounter's end. No Lua error.
+- [ ] Test chime: 1, 3, 3, 3, 3.
 
 ## In-client checks: Demonic Brand pentagram (Warlock, Forever)
 

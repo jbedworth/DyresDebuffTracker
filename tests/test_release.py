@@ -272,7 +272,7 @@ class ReleaseTests(unittest.TestCase):
         self.assertEqual(builder.MEDIA_FILES,
                          ("Textures/Icon.tga", "Textures/FrozenArc.tga", "Textures/ChilledArc.tga",
                           "Textures/BrandPentagram.tga", "Textures/BrandGlow.tga",
-                          "Textures/ChillBall.tga", "Textures/ChillBalls.tga"))
+                          "Textures/ChillArc.tga", "Textures/ChillArcFill.tga"))
         for name in builder.MEDIA_FILES:
             builder._validate_tga(name, (ROOT / name).read_bytes())
         path, _ = self.build()

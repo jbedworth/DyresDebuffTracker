@@ -25,16 +25,21 @@ Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all six):
   red with a bright core and a dark rim, as SVG rendered with headless
   Chrome as the arcs are. Glow: a soft red halo, computed here (no Chrome),
   drawn behind the star with additive blending. Our own art.
-- Textures/ChillBall.tga (64 x 64) and Textures/ChillBalls.tga (256 x 64),
-  the Mage's Winter's Chill stacks above enemy nameplates (John,
-  2026-11-22: "blue frostballs that turn white as the stack builds"), the
-  same TGA format, computed here (no Chrome). A frosted ball, near white
-  with a cool shade, lit from the top left, a bright highlight, a frosty
-  rim, 49 pixels across in a 64-pixel cell (10 of 13 pixels in the game).
-  The game tints it: blue while empty, white while lit. ChillBall is one
-  ball; ChillBalls is four in a row, the status bar's fill, which the game
-  crops (not stretches) as it fills, so the fill shows whole balls. Our own
-  art.
+- Textures/ChillArc.tga and Textures/ChillArcFill.tga (256 x 64), the
+  Mage's Winter's Chill stacks above enemy nameplates (John, 2026-11-23:
+  "a 5 part ice-arc above the mob's head, similar to the effects we do for
+  chilled and frozen, a little higher up, and segmented into 5 parts"),
+  the same TGA format, SVG rendered with headless Chrome as the arcs are.
+  Five segments of an ice band on the arcs' curve, one per 51.2-pixel
+  fifth, with radial cuts, rime spikes, a bright top rim, a darker lower
+  facet, a rough rime edge and specks, and four small icicles hanging from
+  each segment's bottom edge (John, 2026-11-23: "make the arc look more
+  frosty, with small icicle points dripping down"); near white, as the game tints it (blue while empty, white
+  while lit). No segment comes within CHILL_CLEAR pixels of a fifth's
+  edge, so the game's crop there cuts no segment. ChillArc is the whole
+  arc; ChillArcFill is segments 2 to 5 drawn across the whole texture, the
+  status bar's fill, which the game crops (not stretches) as it fills. Our
+  own art.
 - artwork/screenshots/*.png, listing crops of John's raw screenshots (the
   CROPS table: source file, box in source pixels), cut by headless Chrome,
   which decodes WebP. The raw files are never changed.
@@ -394,49 +399,147 @@ def glow_texture():
     return texture
 
 
-CHILL_CELL, CHILL_BALL, CHILL_SAMPLES = 64, 49, 4
-# The light: from the top left, toward the viewer (screen y points down).
-CHILL_LIGHT = (-0.45, -0.55, 0.70)
+# The Winter's Chill arc: five segments of an ice band, one per 51.2-pixel
+# cell of the 256-pixel texture (the game's 64 x 16 at a quarter size). The
+# same curve as the frozen and chilled arcs (radius ARC_R, so the arcs run
+# side by side), but a thicker band: its top is at y CHILL_TOP in the middle,
+# with room below for the icicles (John, 2026-11-23: "make the arc look more
+# frosty, with small icicle points dripping down").
+CHILL_SEGMENTS, CHILL_TOP = 5, 8
+# Icicles per segment, and their length range in texture pixels (4 = 1 game pixel).
+CHILL_ICICLES, CHILL_ICICLE_LONG = 4, (9.0, 19.5)
+CHILL_OUTER, CHILL_INNER = ARC_R + 10, ARC_R - 10
+CHILL_CY = CHILL_TOP + CHILL_OUTER
+CHILL_CELL_W = ARC_W / CHILL_SEGMENTS
+# No pixel of a segment comes nearer than this to a cell's edge, so the game's
+# crop of the stack bar's fill at a cell's edge never cuts into the next segment.
+CHILL_CLEAR = 3
+# The outer tips of segments 1 and 5, at the band's middle.
+CHILL_TIP = 6
 
 
-def frost_ball(nx, ny):
-    """The ball's color and alpha at a point, in ball radii from its center."""
-    d = math.hypot(nx, ny)
-    if d >= 1:
-        return (0.0, 0.0, 0.0, 0.0)
-    nz = math.sqrt(1 - d * d)
-    lx, ly, lz = CHILL_LIGHT
-    length = math.sqrt(lx * lx + ly * ly + lz * lz)
-    diffuse = max(0.0, (nx * lx + ny * ly + nz * lz) / length)
-    shade = 0.5 + 0.5 * diffuse
-    # A frosty rim (brighter near the edge) and a dark outline at the edge.
-    shade += 0.25 * d ** 6
-    shade *= 1 - 0.55 * max(0.0, (d - 0.88) / 0.12) ** 2
-    spot = math.exp(-(((nx + 0.38) ** 2 + (ny + 0.42) ** 2) / 0.035))
-    r, g, b = (min(1.0, shade * c + spot) for c in (0.90, 0.96, 1.0))
-    return (r, g, b, 1.0)
+def chill_point(angle, radius):
+    """A point on the arc's circle; angle 0 is straight up, clockwise."""
+    return ARC_CX + radius * math.sin(angle), CHILL_CY - radius * math.cos(angle)
 
 
-def chill_texture(balls):
-    """balls cells of CHILL_CELL pixels in a row, one ball centered in each,
-    sampled CHILL_SAMPLES x CHILL_SAMPLES: rows of (r, g, b, a) floats."""
-    n, radius, texture = CHILL_SAMPLES, CHILL_BALL / 2, []
-    for y in range(CHILL_CELL):
-        row = []
-        for x in range(CHILL_CELL * balls):
-            cx = (x // CHILL_CELL) * CHILL_CELL + CHILL_CELL / 2
-            color, alpha = [0.0, 0.0, 0.0], 0.0
-            for sy in range(n):
-                for sx in range(n):
-                    px, py = x + (sx + 0.5) / n, y + (sy + 0.5) / n
-                    r, g, b, a = frost_ball((px - cx) / radius, (py - CHILL_CELL / 2) / radius)
-                    alpha += a
-                    color[0] += r * a
-                    color[1] += g * a
-                    color[2] += b * a
-            row.append(tuple(v / alpha for v in color) + (alpha / (n * n),) if alpha else (0.0, 0.0, 0.0, 0.0))
-        texture.append(row)
-    return texture
+def chill_edge(xb, right):
+    """The radial cut nearest to the cell edge xb with every point of the band
+    at least CHILL_CLEAR from it: right=True for a segment's right end."""
+    target = xb - CHILL_CLEAR if right else xb + CHILL_CLEAR
+    d = target - ARC_CX
+    # The band's widest point on this side: the outer radius where the cut
+    # leans away from the middle, else the inner.
+    radius = CHILL_OUTER if (d >= 0) == right else CHILL_INNER
+    return math.asin(d / radius)
+
+
+def chill_tip_angle(x, radius):
+    return math.asin((x - ARC_CX) / radius)
+
+
+def chill_segment(i):
+    """The path of segment i (0 to 4), and its angles (left, right)."""
+    left_x, right_x = i * CHILL_CELL_W, (i + 1) * CHILL_CELL_W
+    mid = (CHILL_OUTER + CHILL_INNER) / 2
+    p = lambda pt: f"{pt[0]:.2f},{pt[1]:.2f}"
+    ro, ri = CHILL_OUTER, CHILL_INNER
+    if i == 0:
+        a = chill_tip_angle(CHILL_TIP + 12, mid)
+        start = [chill_point(chill_tip_angle(CHILL_TIP, mid), mid)]
+    else:
+        a = chill_edge(left_x, False)
+        start = []
+    if i == CHILL_SEGMENTS - 1:
+        b = chill_tip_angle(ARC_W - CHILL_TIP - 12, mid)
+        end = [chill_point(chill_tip_angle(ARC_W - CHILL_TIP, mid), mid)]
+    else:
+        b = chill_edge(right_x, True)
+        end = []
+    d = "M" + p((start or [chill_point(a, ro)])[0])
+    if start:
+        d += " L" + p(chill_point(a, ro))
+    d += f" A{ro} {ro} 0 0 1 " + p(chill_point(b, ro))
+    for pt in end:
+        d += " L" + p(pt)
+    d += " L" + p(chill_point(b, ri))
+    d += f" A{ri} {ri} 0 0 0 " + p(chill_point(a, ri)) + " Z"
+    return d, a, b
+
+
+def chill_arc_svg(x0=0.0, width=ARC_W):
+    """The five segments, near white (the game tints them: blue while empty,
+    white while lit), drawn from x0 over width texture pixels into the whole
+    256 x 64 (the stack bar's fill draws segments 2 to 5 only)."""
+    rng = random.Random(1257)
+    mid = (CHILL_OUTER + CHILL_INNER) / 2
+    p = lambda pt: f"{pt[0]:.2f},{pt[1]:.2f}"
+    parts, clips = [], []
+    for i in range(CHILL_SEGMENTS):
+        left_x, right_x = i * CHILL_CELL_W, (i + 1) * CHILL_CELL_W
+        clips.append(f'<clipPath id="c{i}" clipPathUnits="userSpaceOnUse"><rect x="{left_x + CHILL_CLEAR:.2f}" y="0" '
+                     f'width="{CHILL_CELL_W - 2 * CHILL_CLEAR:.2f}" height="{ARC_H}"/></clipPath>')
+        d, a, b = chill_segment(i)
+        # The lower facet: the band's bottom half, a shade darker.
+        facet = (f"M{p(chill_point(a, mid - 1))} A{mid - 1} {mid - 1} 0 0 1 {p(chill_point(b, mid - 1))} "
+                 f"L{p(chill_point(b, CHILL_INNER))} A{CHILL_INNER} {CHILL_INNER} 0 0 0 {p(chill_point(a, CHILL_INNER))} Z")
+        ridge = f"M{p(chill_point(a, mid + 2))} A{mid + 2} {mid + 2} 0 0 1 {p(chill_point(b, mid + 2))}"
+        rim = f"M{p(chill_point(a, CHILL_OUTER - 1.3))} A{CHILL_OUTER - 1.3} {CHILL_OUTER - 1.3} 0 0 1 {p(chill_point(b, CHILL_OUTER - 1.3))}"
+        # Rime: two small ice spikes on the band's top, and a crack.
+        spikes = []
+        for k in (0.33, 0.67):
+            t = a + (b - a) * (k + rng.uniform(-0.08, 0.08))
+            h, w = rng.uniform(3.5, 6.0), rng.uniform(1.0, 1.6)
+            base_l, base_r = chill_point(t - w / CHILL_OUTER, CHILL_OUTER - 0.5), chill_point(t + w / CHILL_OUTER, CHILL_OUTER - 0.5)
+            tip = chill_point(t + rng.uniform(-0.004, 0.004), CHILL_OUTER + h)
+            spikes.append(f'<polygon points="{p(base_l)} {p(tip)} {p(base_r)}" fill="#f6fbff" stroke="#7fa6cc" stroke-width="0.4"/>')
+        # Icicles hanging from the band's bottom edge, longest in the middle
+        # of the segment; each a thin tapered drip with a bright core line.
+        icicles = []
+        for j in range(CHILL_ICICLES):
+            k = (j + 0.5) / CHILL_ICICLES + rng.uniform(-0.05, 0.05)
+            t = a + (b - a) * k
+            long = CHILL_ICICLE_LONG[0] + (CHILL_ICICLE_LONG[1] - CHILL_ICICLE_LONG[0]) \
+                * (1 - abs(k - 0.5) * 2) * rng.uniform(0.75, 1.0) * (0.75 if i in (0, CHILL_SEGMENTS - 1) else 1.0)
+            w = rng.uniform(1.5, 2.1) / CHILL_INNER  # half the base width, as an angle
+            top = CHILL_INNER + 1.5
+            pts = [chill_point(t - w, top), chill_point(t - w * 0.55, CHILL_INNER - long * 0.45),
+                   chill_point(t, CHILL_INNER - long), chill_point(t + w * 0.45, CHILL_INNER - long * 0.5),
+                   chill_point(t + w, top)]
+            icicles.append(f'<polygon points="{" ".join(p(q) for q in pts)}" fill="url(#iciclefill)" '
+                           f'stroke="#6f97c0" stroke-width="0.45" stroke-linejoin="round"/>'
+                           f'<path d="M{p(chill_point(t - w * 0.2, CHILL_INNER))} L{p(chill_point(t - w * 0.1, CHILL_INNER - long * 0.7))}" '
+                           f'stroke="#ffffff" stroke-width="0.5" opacity="0.9"/>')
+        # Rime specks on the band: small frost crystals.
+        specks = "".join(
+            f'<circle cx="{q[0]:.2f}" cy="{q[1]:.2f}" r="{rng.uniform(0.35, 0.7):.2f}" fill="#ffffff" opacity="0.9"/>'
+            for q in (chill_point(a + (b - a) * rng.uniform(0.08, 0.92), rng.uniform(CHILL_INNER + 2, CHILL_OUTER - 3))
+                      for _ in range(7)))
+        t = a + (b - a) * rng.uniform(0.4, 0.6)
+        crack = (f'<path d="M{p(chill_point(t, CHILL_OUTER - 2))} L{p(chill_point(t + 0.006, mid + 1))} '
+                 f'L{p(chill_point(t - 0.004, CHILL_INNER + 3))}" fill="none" stroke="#ffffff" stroke-width="0.5" opacity="0.8"/>')
+        parts.append(
+            f'<g clip-path="url(#c{i})">'
+            f'<path d="{d}" fill="#d8ecff" opacity="0.75" filter="url(#glow)"/>'
+            + "".join(spikes) + "".join(icicles)
+            + f'<path d="{d}" fill="url(#chillfill)" stroke="#6f97c0" stroke-width="1.1" stroke-linejoin="round"/>'
+            f'<path d="{facet}" fill="#a8c2dc" opacity="0.45"/>'
+            f'<path d="{d}" fill="none" stroke="#ffffff" stroke-width="1.1" opacity="0.7" filter="url(#rime)"/>'
+            f'<path d="{ridge}" fill="none" stroke="#ffffff" stroke-width="0.8" opacity="0.85"/>'
+            f'<path d="{rim}" fill="none" stroke="#ffffff" stroke-width="1.3"/>'
+            + specks + crack + '</g>')
+    return f'''<svg xmlns="http://www.w3.org/2000/svg" width="{ARC_W*ARC_SAMPLES}" height="{ARC_H*ARC_SAMPLES}" viewBox="{x0:.2f} 0 {width:.2f} {ARC_H}" preserveAspectRatio="none">
+<defs>
+<filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}"><feGaussianBlur stdDeviation="1.8"/></filter>
+<filter id="rime" filterUnits="userSpaceOnUse" x="0" y="0" width="{ARC_W}" height="{ARC_H}">
+<feTurbulence type="fractalNoise" baseFrequency="0.6" numOctaves="2" seed="12"/>
+<feDisplacementMap in="SourceGraphic" scale="2.2" xChannelSelector="R" yChannelSelector="G"/></filter>
+<linearGradient id="iciclefill" x1="0" y1="0" x2="0" y2="1">
+<stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#c8dcef"/></linearGradient>
+<linearGradient id="chillfill" gradientUnits="userSpaceOnUse" x1="0" y1="{CHILL_TOP}" x2="0" y2="{CHILL_TOP + 40}">
+<stop offset="0" stop-color="#ffffff"/><stop offset="0.45" stop-color="#e4f0fb"/><stop offset="1" stop-color="#b6cde3"/></linearGradient>
+{"".join(clips)}</defs>
+{"".join(parts)}</svg>'''
 
 
 def svg_texture(svg, work, width=ARC_W, height=ARC_H):
@@ -492,9 +595,12 @@ def make_brand(work):
     write_tga(ROOT / "Textures" / "BrandGlow.tga", glow_texture())
 
 
-def make_chill():
-    write_tga(ROOT / "Textures" / "ChillBall.tga", chill_texture(1))
-    write_tga(ROOT / "Textures" / "ChillBalls.tga", chill_texture(4))
+def make_chill(work):
+    write_tga(ROOT / "Textures" / "ChillArc.tga", svg_texture(chill_arc_svg(), work))
+    # Segments 2 to 5, stretched across the whole texture: the stack bar's
+    # fill, drawn over cells 2 to 5 in the game, so its aspect is right there.
+    write_tga(ROOT / "Textures" / "ChillArcFill.tga",
+              svg_texture(chill_arc_svg(CHILL_CELL_W, ARC_W - CHILL_CELL_W), work))
 
 
 def make_logo(work):
@@ -537,7 +643,7 @@ def main(args):
         if "--brand" in wanted:
             make_brand(work)
         if "--chill" in wanted:
-            make_chill()
+            make_chill(work)
         if "--logo" in wanted:
             make_logo(work)
         if "--icon" in wanted:

@@ -117,27 +117,34 @@ over, your bar's settings are copied here once.
 
 ## Mage: Winter's Chill
 
-- **Five frost balls** above an enemy's nameplate while your Winter's Chill
-  is on the mob: blue, and one more turns white with each stack, up to 5,
-  as combo points. Your Frost spells add the stacks. The game lights the
-  balls, so they work in combat.
-- Only your own Winter's Chill shows.
+- **A frosty ice arc of five segments**, with small icicles, above an enemy's nameplate while your
+  Winter's Chill is on the mob, above the frozen and chilled arcs: blue,
+  and one more segment turns white with each stack, up to 5, as combo
+  points. Your Frost spells add the stacks. The game lights the segments,
+  so they work in combat.
+- Only your own Winter's Chill shows, and only while you know the Winter's
+  Chill talent (any rank): without it, no arc and no chime, and the rows
+  are greyed. **Preview** still works.
 - On by default for Mages. "Winter's Chill" on the DoTs page: **Show**,
   **Size** (50% to 200%, default 100%), **Height above nameplate** (0 to 60
   pixels, default 36, above the frozen and chilled arcs), **Preview**, and
   **Reset Winter's Chill**. Changes apply at once.
-- **Preview** (or `/ddt preview chill`): three of five balls white on your
+- **Preview** (or `/ddt preview chill`): three of five segments white on your
   target's nameplate with no Winter's Chill on it, so you can set Size and
   Height. Press it again, change target, or log out to end it.
-- On Classic Era the balls count stacks with Dyre's Toolkit 2.11.0 or
-  later; with an older Toolkit only the first ball turns white.
-- **Stack chime** (Classic Era): a note as each stack goes on, rising from 1
-  to 4, and a held high note at 5, with **Note set** (Bassoon or Sax) and
-  **Test chime**. On by default; it needs Dyre's Sounds. Only your own
-  Winter's Chill on your target chimes. It moved here from Dyre's Buff Reminders (1.13.3
-  removes its chime), and your settings there are copied once. While an
-  older Dyre's Buff Reminders is loaded, this chime waits, so you never hear
-  two. WoW: Forever has no chime yet.
+- On Classic Era the segments count stacks with Dyre's Toolkit 2.11.0 or
+  later; with an older Toolkit only the first segment turns white.
+- **Stack chime**, with **Note set** (Bassoon or Sax) and **Test chime**.
+  On by default; it needs Dyre's Sounds.
+  - Classic Era: a note as each stack goes on, rising from 1 to 4, and a
+    held high note at 5. Only your own Winter's Chill on your target
+    chimes. It moved here from Dyre's Buff Reminders (1.13.3 removes its
+    chime), and your settings there are copied once. While an older Dyre's
+    Buff Reminders is loaded, this chime waits, so you never hear two.
+  - WoW: Forever: a note when Winter's Chill goes on your target (note 1),
+    and another as each stack after it goes on (the 3rd note). The client
+    does not let AddOns count the stacks in combat, so the notes do not
+    rise, and another Mage's Winter's Chill on your target may chime too.
 
 ## Warlock: Demonic Brand (WoW: Forever)
 
@@ -193,7 +200,7 @@ AddOn's pages say so.
   AddOns.
 - `/ddt debug`: what the trackers see.
 - `/ddt preview chill` (Mage) and `/ddt preview brand` (Warlock): the
-  Winter's Chill balls or the Demonic Brand pentagram on your target's
+  Winter's Chill arc or the Demonic Brand pentagram on your target's
   nameplate, to set their size and height.
 - `/debufftracker` works the same, in case another AddOn uses `/ddt`.
 

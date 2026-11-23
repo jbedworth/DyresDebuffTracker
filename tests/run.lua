@@ -104,6 +104,8 @@ local function newFrame(state, kind, name, parent, template)
         function texture:SetVertexColor(...) self.tint = {...} end
         function texture:SetPoint(...) self.point = {...} end
         function texture:SetSize(width, height) self.width, self.height = width, height end
+        function texture:SetTexCoord(...) self.coords = {...} end
+        function texture:SetAllPoints(target) self.all = target end
         function texture:CreateAnimationGroup()
             local group = stub({animations = {}})
             function group:CreateAnimation(kind)
@@ -209,7 +211,8 @@ local function fixture(options)
         GetSpellBookSkillLineInfo = function() return {itemIndexOffset = 0, numSpellBookItems = #book} end,
         GetSpellBookItemInfo = function(index) local item = book[index]
             return item and {spellID = item[1], name = item[2], itemType = 1} end,
-        IsSpellKnown = function(id) return known[id] == true end,
+        -- options.talents: talents this character knows (a table the test may change).
+        IsSpellKnown = function(id) return known[id] == true or (options.talents or {})[id] == true end,
         HasPetSpells = function() return 0 end,
     }
     -- options.auras(unit, index, filter): the auras Classic Era's plain-Lua container reads.
@@ -263,7 +266,11 @@ local function fixture(options)
         end}
     end
     local function Initializer(setting)
-        return {setting = setting, AddModifyPredicate = function(self, predicate) self.modify = predicate end,
+        -- Every modify predicate must pass, as the client's list of them.
+        return {setting = setting, AddModifyPredicate = function(self, predicate)
+                local before = self.modify
+                self.modify = before and function() return before() and predicate() end or predicate
+            end,
             AddShownPredicate = function(self, predicate) self.shown = predicate end,
             SetParentInitializer = function() end, InitFrame = function() end}
     end
@@ -283,12 +290,19 @@ local function fixture(options)
                 state.settings[variable] = setting
                 return setting
             end,
-            CreateCheckbox = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
-            CreateDropdown = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
+            CreateCheckbox = function(_, setting, tooltip)
+                setting.initializer, setting.tooltip = Initializer(setting), tooltip
+                return setting.initializer
+            end,
+            CreateDropdown = function(_, setting, _, tooltip)
+                setting.initializer, setting.tooltip = Initializer(setting), tooltip
+                return setting.initializer
+            end,
             CreateControlTextContainer = function()
                 return {Add = function() end, GetData = function() return {} end}
             end,
-            CreateSlider = function(_, setting, options)
+            CreateSlider = function(_, setting, options, tooltip)
+                setting.tooltip = tooltip
                 setting.labelFormatter = type(options) == "table" and options.labelFormatter or nil
                 setting.sliderOptions = options
                 setting.initializer = Initializer(setting)
@@ -1640,7 +1654,8 @@ test("profile: export and import round trip; a bad line or a failing part change
 end)
 
 -- The Mage's frozen and chilled arcs (John, 2026-11-18).
-local MAGE = {class = "MAGE", className = "Mage", book = {{118, "Polymorph"}, {133, "Fireball"}}}
+local MAGE = {class = "MAGE", className = "Mage", book = {{118, "Polymorph"}, {133, "Fireball"}},
+    talents = {[11180] = true}}
 
 local function Mage(extra)
     local options = {}
@@ -2202,7 +2217,7 @@ end)
 -- charge) (like a rogue/druid combo-point counter)"; then: "blue frostballs
 -- that turn white as the stack builds").
 local function LitCells(holder, button)
-    -- Ball 1 shows white with the button; the bar's fill covers balls 2 to 5.
+    -- Segment 1 shows white with the button; the bar's fill covers segments 2 to 5.
     if not button.shown then
         return 0
     end
@@ -2213,12 +2228,12 @@ local function LitCells(holder, button)
     return math.max(1, math.floor(bar.value or 1))
 end
 
-test("Winter's Chill balls: Mages only, on by default, rows, repaired, both clients", function()
+test("Winter's Chill arc: Mages only, on by default, rows, repaired, both clients", function()
     local warlock = fixture({spells = BRAND})
-    equal(warlock.ddt.chillArcs, nil, "no balls for a Warlock")
+    equal(warlock.ddt.chillArcs, nil, "no arc for a Warlock")
     equal(warlock.settings.DDT_CHILL, nil, "no rows for other classes")
     local state = Mage()
-    assert(state.ddt.chillArcs, "a Mage has the balls")
+    assert(state.ddt.chillArcs, "a Mage has the arc")
     equal(state.settings.DDT_CHILL.default, true)
     equal(state.settings.DDT_CHILL.name, "Show")
     equal(state.settings.DDT_CHILL_SIZE.default, 100)
@@ -2240,6 +2255,9 @@ test("Winter's Chill balls: Mages only, on by default, rows, repaired, both clie
     equal(bad.enabled, true)
     equal(bad.offset, 0)
     equal(bad.size, 200)
+    -- A saved height stays.
+    equal(Mage({saved = {wintersChill = {offset = 40}}}).ddt.db.wintersChill.offset, 40)
+    equal(Mage({saved = {wintersChill = {offset = 20}}}).ddt.db.wintersChill.offset, 20)
     -- A client without the debuff: no cells, and one line says why.
     local old = Mage({before = function(st)
         local spell = st.env.C_Spell.GetSpellName
@@ -2247,14 +2265,14 @@ test("Winter's Chill balls: Mages only, on by default, rows, repaired, both clie
     end})
     equal(old.ddt.chillArcs, nil)
     equal(old.settings.DDT_CHILL, nil)
-    contains(old.messages[#old.messages], "Winter's Chill balls stay off")
+    contains(old.messages[#old.messages], "Winter's Chill arc stays off")
     old.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
     equal(old.said("chill off: this client lacks Winter's Chill (12579)"), true)
     -- The frozen and chilled arcs keep working.
     assert(old.ddt.frostArcs)
 end)
 
-test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five balls, the game lights them", function()
+test("Winter's Chill arc on Forever: one HARMFUL|PLAYER slot of 12579, five segments, the game lights them", function()
     local state = Mage({engine = true})
     local arcs = state.ddt.chillArcs
     equal(#arcs.all, state.ddt.FROST_PREWARM, "holders made ahead, out of combat")
@@ -2264,7 +2282,8 @@ test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five ba
     equal(#arcs.all, state.ddt.FROST_PREWARM, "none made in combat")
     equal(holder.parent, plate)
     equal(holder.point[2], plate.UnitFrame.healthBar, "on the bar FindPlateBar finds")
-    equal(holder.point[5], 36, "36 pixels above the bar: over the arcs")
+    equal(holder.point[5], 36, "36 pixels above the bar: over the frozen and chilled arcs")
+    equal(holder.width .. "x" .. holder.height, "64x16", "the holder fits the arc")
     local slot = SlotBy(holder.container, "chill")
     equal(#holder.container.slots, 1)
     equal(slot.filter, "HARMFUL|PLAYER", "only your own: it helps only your Cone of Cold")
@@ -2272,36 +2291,41 @@ test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five ba
     equal(ids[1], nil, "a set, not a list")
     equal(ids[12579], true, "the debuff")
     equal(ids[11180], nil, "not the talent")
-    -- The button: five blue balls, ball 1 white, and the bar of white balls over balls 2 to 5.
+    -- The button: the arc in blue, segment 1 white, and the bar of white segments over segments 2 to 5.
     local button = slot.button
     equal(holder.arcs.chill, button)
-    equal(button.width, 65)
-    equal(button.height, 13)
+    equal(button.width, 64, "as wide as the frozen and chilled arcs")
+    equal(button.height, 16)
     local empties, lit = 0, 0
     for _, texture in ipairs(button.textures) do
         if texture.layer == "BORDER" then
             empties = empties + 1
-            contains(texture.path, "Textures\\ChillBall")
+            equal(texture.path:match("Textures\\(%w+)$"), "ChillArc")
+            equal(texture.all, button, "the whole arc")
+            equal(texture.coords, nil, "all five segments")
             equal(texture.tint[3], 1, "blue")
             assert(texture.tint[1] < 0.5, "blue, not white")
-            equal(texture.point[4], (empties - 1) * 13, "ball " .. empties)
         end
         if texture.layer == "ARTWORK" then
             lit = lit + 1
-            contains(texture.path, "Textures\\ChillBall")
+            equal(texture.path:match("Textures\\(%w+)$"), "ChillArc")
+            equal(table.concat(texture.coords, ","), "0,0.2,0,1", "the arc's first fifth")
+            equal(texture.width, 12.8)
+            equal(texture.height, 16)
             equal(texture.tint[1], 1, "white")
-            equal(texture.point[4], 0, "over ball 1")
+            equal(texture.point[1], "LEFT")
+            equal(texture.point[4], 0, "over segment 1")
         end
         equal(texture.color, nil, "art, not a color block")
     end
-    equal(empties, 5, "five balls")
-    equal(lit, 1, "ball 1 white while the debuff shows")
+    equal(empties, 1, "one blue arc")
+    equal(lit, 1, "segment 1 white while the debuff shows")
     local bar = holder.bar
     equal(bar.kind, "StatusBar")
     equal(bar.parent, button)
-    equal(bar.width, 52, "balls 2 to 5")
-    equal(bar.height, 13)
-    contains(bar.barTexture, "Textures\\ChillBalls", "four white balls, cropped as it fills")
+    equal(bar.width, 51.2, "segments 2 to 5")
+    equal(bar.height, 16)
+    equal(bar.barTexture:match("Textures\\(%w+)$"), "ChillArcFill", "segments 2 to 5, cropped as it fills")
     equal(bar.barColor[1], 1, "white")
     -- The engine's stack gate: range 1 to 5; it sets the value to the stacks.
     local gate = button.applicationBar
@@ -2310,17 +2334,17 @@ test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five ba
     equal(gate[2].minApplications, 1)
     equal(gate[2].maxApplications, 5)
     equal(bar.shown, true)
-    -- The fill for n stacks ends between ball n and ball n + 1 (13-pixel cells).
+    -- The fill for n stacks ends between segment n and n + 1 (12.8-pixel fifths).
     equal(bar.point[1], "LEFT")
     equal(bar.point[2], button)
     for stacks = 1, 5 do
         local edge = bar.point[4] + (stacks - 1) / 4 * bar.width
-        equal(edge, 13 * stacks, stacks .. " stacks")
+        assert(math.abs(edge - 64 / 5 * stacks) < 1e-9, stacks .. " stacks: " .. edge)
     end
     equal(state.auraReads, 0, "no AddOn code reads an aura")
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
     equal(state.said("chill on=true engine=engine holders=10 plates=1 shown=1 visible=1 anchors=[Blizzard=1]"), true)
-    -- A client without SetApplicationBar: ball 1 only, never a wrong count.
+    -- A client without SetApplicationBar: segment 1 only, never a wrong count.
     local older = Mage({engine = true, before = function(st)
         local create = st.env.CreateFrame
         st.env.CreateFrame = function(...)
@@ -2344,40 +2368,59 @@ test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five ba
     equal(oldHolder.bar.shown, false, "no stack gate: the bar hides")
 end)
 
-test("Winter's Chill art: one ball and four in a row, whole balls with clear gaps", function()
-    -- 64 x 64 and 256 x 64, uncompressed BGRA, top-left origin.
-    for name, width in pairs({ChillBall = 64, ChillBalls = 256}) do
+test("Winter's Chill art: a five-segment arc, clear at every fifth's edge, and its fill", function()
+    -- 256 x 64 each, uncompressed BGRA, top-left origin; the balls are gone.
+    for _, name in ipairs({"ChillArc", "ChillArcFill"}) do
         local data, w, h = ReadTGA(name)
-        equal(#data, 18 + width * 64 * 4, name)
-        equal(w, width, name)
+        equal(#data, 18 + 256 * 64 * 4, name)
+        equal(w, 256, name)
         equal(h, 64, name)
         equal(data:byte(18), 0x28, name)
     end
-    local function Pixel(data, width, x, y)
-        local at = 18 + (y * width + x) * 4
-        return data:byte(at + 1), data:byte(at + 2), data:byte(at + 3), data:byte(at + 4)
+    equal(io.open("Textures/ChillBall.tga", "rb"), nil, "no ball any more")
+    equal(io.open("Textures/ChillBalls.tga", "rb"), nil, "no row of balls any more")
+    local function Alpha(data, x, y)
+        return data:byte(18 + (y * 256 + x) * 4 + 4)
     end
-    local data = ReadTGA("ChillBalls")
-    for ball = 0, 3 do
-        -- Clear at each cell's edges: the crop between two balls cuts nothing.
-        local _, _, _, a = Pixel(data, 256, ball * 64, 32)
-        equal(a, 0, "clear left of ball " .. ball + 1)
-        _, _, _, a = Pixel(data, 256, ball * 64 + 63, 32)
-        equal(a, 0, "clear right of ball " .. ball + 1)
-        -- Solid and light in the middle: the game tints it.
-        local b, g, r
-        b, g, r, a = Pixel(data, 256, ball * 64 + 32, 32)
-        equal(a, 255, "ball " .. ball + 1)
-        assert(r > 150 and g > 150 and b > 150, "near white, for the tint")
+    local function Column(data, x)
+        local most = 0
+        for y = 0, 63 do
+            most = math.max(most, Alpha(data, x, y))
+        end
+        return most
     end
-    local single = ReadTGA("ChillBall")
-    local b, g, r, a = Pixel(single, 64, 32, 32)
-    local b4, g4, r4, a4 = Pixel(data, 256, 32, 32)
-    equal(a, 255)
-    equal(r .. g .. b .. a, r4 .. g4 .. b4 .. a4, "the same ball")
+    -- The arc: clear in every column at each fifth's edge (51.2 pixels), so
+    -- the crop there cuts no segment; solid and near white inside each fifth.
+    local arc = ReadTGA("ChillArc")
+    for edge = 1, 4 do
+        local x = edge * 51.2
+        for column = math.floor(x) - 1, math.ceil(x) do
+            equal(Column(arc, column), 0, "clear at edge " .. edge .. ", column " .. column)
+        end
+    end
+    for segment = 0, 4 do
+        local x, solid = math.floor(segment * 51.2 + 25.6), false
+        for y = 0, 63 do
+            local at = 18 + (y * 256 + x) * 4
+            local b, g, r, a = arc:byte(at + 1, at + 4)
+            if a == 255 and r > 150 and g > 150 and b > 150 then solid = true end
+        end
+        equal(solid, true, "segment " .. segment + 1 .. ": solid, near white, for the tint")
+    end
+    -- The fill: segments 2 to 5 over the whole texture (64 pixels each), clear
+    -- at each quarter's edge.
+    local fill = ReadTGA("ChillArcFill")
+    for edge = 1, 3 do
+        for column = edge * 64 - 1, edge * 64 do
+            equal(Column(fill, column), 0, "fill clear at edge " .. edge .. ", column " .. column)
+        end
+    end
+    for segment = 0, 3 do
+        assert(Column(fill, segment * 64 + 32) == 255, "fill segment " .. segment + 2)
+    end
 end)
 
-test("Winter's Chill balls on a plain-Lua container: one ball per stack, yours only", function()
+test("Winter's Chill arc on a plain-Lua container: one segment per stack, yours only", function()
     -- unit -> {{spellId, yours, stacks}}
     local auras = {nameplate1 = {{12579, true, 1}}}
     local function Read(unit, index, filter)
@@ -2398,7 +2441,7 @@ test("Winter's Chill balls on a plain-Lua container: one ball per stack, yours o
     equal(holder.container.kind, "Frame", "the plain-Lua container")
     local button = holder.arcs.chill
     -- Toolkit 2.11.0 and later gate the bar here; an older one (the copy,
-    -- 2.10.2) does not: then ball 1 only, never a wrong count.
+    -- 2.10.2) does not: then segment 1 only, never a wrong count.
     local gated = type(button.display) == "table" and button.display.applications == holder.bar
     equal(LitCells(holder, button), 1, "one stack")
     for stacks = 2, 5 do
@@ -2406,7 +2449,7 @@ test("Winter's Chill balls on a plain-Lua container: one ball per stack, yours o
         emit(state, "UNIT_AURA", "nameplate1")
         equal(LitCells(holder, button), gated and stacks or 1, stacks .. " stacks")
     end
-    -- A stack count of 0 for one stack still makes ball 1 white.
+    -- A stack count of 0 for one stack still makes segment 1 white.
     auras.nameplate1 = {{12579, true, 0}}
     emit(state, "UNIT_AURA", "nameplate1")
     equal(button.shown, true)
@@ -2422,7 +2465,7 @@ test("Winter's Chill balls on a plain-Lua container: one ball per stack, yours o
     equal(LitCells(holder, button), 0, "Frostbolt's chill is not Winter's Chill")
 end)
 
-test("Winter's Chill balls: Size, Height, Reset live; the profile carries them; the preview shows 3 of 5", function()
+test("Winter's Chill arc: Size, Height, Reset live; the profile carries them; the preview shows 3 of 5", function()
     local state = Mage({engine = true})
     local arcs, db = state.ddt.chillArcs, state.ddt.db
     AddPlate(state, "nameplate1")
@@ -2564,6 +2607,11 @@ local function Sounds(state, lacks)
         state.played[#state.played + 1] = key
         return true
     end
+    -- A file for every key it has (AddAuraSound's sound fields).
+    function library.AuraSound(key)
+        if lacks and key:find(lacks) then return nil end
+        return {soundFileName = key .. ".wav"}
+    end
     state.env.DyresSounds = library
     -- Your target is the mob the log lines hit (state.target; nil: no target).
     state.target = "Creature-0-1"
@@ -2689,13 +2737,131 @@ test("Winter's Chill chime: an older Dyre's Sounds plays sax; none plays nothing
     equal(warlock.said("chime none (Mage only)"), true)
 end)
 
-test("Winter's Chill chime on WoW: Forever: not built yet, so no combat log and no rows", function()
+test("Winter's Chill chime: no combat log and no aura sounds, so no chime and no rows", function()
     local state = Mage({restricted = true, before = function(st) Sounds(st) end})
     equal(ChimeOn(state), false, "Forever refuses the combat log")
     equal(state.settings.DDT_CHILL_CHIME, nil, "no chime rows")
     assert(state.settings.DDT_CHILL, "the balls' rows stay")
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
-    equal(state.said("chime off: no combat log on this client"), true)
+    equal(state.said("chime off: this client has no combat log and no aura sounds"), true)
+end)
+
+-- The game's aura sound API, as Forever has it (UnitAuraDocumentation:
+-- AddAuraSound returns an ID; RemoveAuraSound takes it). state.encounter is
+-- the Encounter restriction.
+local function AuraApi(state)
+    state.auraSounds, state.nextSound = {}, 0
+    state.env.C_UnitAuras.AddAuraSound = function(trigger, info)
+        assert(not state.combat, "AddAuraSound in combat")
+        assert(not state.encounter, "AddAuraSound in an encounter")
+        state.nextSound = state.nextSound + 1
+        state.auraSounds[state.nextSound] = {trigger = trigger, info = info}
+        return state.nextSound
+    end
+    state.env.C_UnitAuras.RemoveAuraSound = function(id)
+        assert(not state.encounter, "RemoveAuraSound in an encounter")
+        state.auraSounds[id] = nil
+    end
+    state.env.Enum.UnitAuraSoundTrigger = {Added = 0, ApplicationsIncreased = 1, Removed = 2}
+    state.env.Enum.AddOnRestrictionType = {Encounter = 2}
+    state.env.C_RestrictedActions = {IsAddOnRestrictionActive = function(kind)
+        return kind == 2 and state.encounter == true
+    end}
+end
+
+-- The registered sounds, "trigger:file", sorted; each checked for the rest.
+local function AuraRegistered(state)
+    local list = {}
+    for _, entry in pairs(state.auraSounds) do
+        local info = entry.info
+        equal(info.unitToken, "target")
+        equal(info.spellID, 12579)
+        equal(info.outputChannel, "master")
+        equal(info.throttleSeconds, 0.5)
+        list[#list + 1] = entry.trigger .. ":" .. tostring(info.soundFileName)
+    end
+    table.sort(list)
+    return table.concat(list, ",")
+end
+
+test("Winter's Chill chime on WoW: Forever: the game's aura sounds on your target, one fixed note", function()
+    local state = Mage({restricted = true, before = function(st) Sounds(st); AuraApi(st) end})
+    equal(ChimeOn(state), false, "no combat log")
+    equal(state.ddt.ChillChimeMode(), "aura")
+    -- Added: note 1; ApplicationsIncreased: the 3rd note.
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
+    assert(state.settings.DDT_CHILL_NOTESET, "Note set row")
+    assert(state.buttons["Winter's Chill: Test chime"], "Test chime")
+    equal(#state.messages, 0, "nothing said at login")
+    -- Off: removed at once; on again: registered again.
+    state.settings.DDT_CHILL_CHIME.set(false)
+    equal(AuraRegistered(state), "", "off: no aura sounds")
+    state.settings.DDT_CHILL_CHIME.set(true)
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
+    -- A note set change registers the set's notes, out of combat.
+    state.played = {}
+    state.settings.DDT_CHILL_NOTESET.set("sax")
+    equal(AuraRegistered(state), "0:sax1.wav,1:sax3.wav")
+    equal(state.played[1], "sax3", "a new set plays the note you hear most")
+    -- In combat it waits for the end of combat.
+    state.combat = true
+    state.settings.DDT_CHILL_NOTESET.set("bassoon")
+    equal(AuraRegistered(state), "0:sax1.wav,1:sax3.wav", "in combat: no change yet")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav", "after combat")
+    -- Off in combat: removed at once.
+    state.combat = true
+    state.settings.DDT_CHILL_CHIME.set(false)
+    equal(AuraRegistered(state), "", "off in combat: removed at once")
+    state.settings.DDT_CHILL_CHIME.set(true)
+    equal(AuraRegistered(state), "", "on in combat: waits")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
+    -- An encounter: nothing changes until its end.
+    state.encounter = true
+    state.settings.DDT_CHILL_CHIME.set(false)
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav", "an encounter: waits")
+    state.encounter = false
+    emit(state, "ADDON_RESTRICTION_STATE_CHANGED")
+    equal(AuraRegistered(state), "", "at the encounter's end")
+    state.settings.DDT_CHILL_CHIME.set(true)
+    -- Test chime plays what this client plays: note 1, then the 3rd note.
+    state.played, state.timers = {}, {}
+    state.buttons["Winter's Chill: Test chime"]()
+    for _, fn in ipairs(state.timers) do fn() end
+    equal(table.concat(state.played, ","), "bassoon1,bassoon3,bassoon3,bassoon3,bassoon3")
+    -- Reset: on, Bassoon, registered.
+    state.settings.DDT_CHILL_NOTESET.set("sax")
+    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("chime aura on=true registered=true sounds=2 deferred=false noteSet=bassoon library=yes"), true)
+    equal(state.auraReads, 0, "the chime reads no aura")
+end)
+
+test("Winter's Chill chime on WoW: Forever: older Dyre's Sounds, none, an old Dyre's Buff Reminders", function()
+    local old = Mage({restricted = true, before = function(st) Sounds(st, "^bassoon"); AuraApi(st) end})
+    equal(AuraRegistered(old), "0:sax1.wav,1:sax3.wav", "no bassoon: the sax notes")
+    local none = Mage({restricted = true, before = function(st) AuraApi(st) end})
+    equal(AuraRegistered(none), "", "no Dyre's Sounds: nothing registered")
+    -- Dyre's Buff Reminders never chimed without the log: no wait, no line.
+    local dbr = Mage({restricted = true, loaded = {DyresBuffReminders = "1.13.2"}, before = function(st)
+        Sounds(st)
+        AuraApi(st)
+    end})
+    equal(AuraRegistered(dbr), "0:bassoon1.wav,1:bassoon3.wav")
+    equal(#dbr.messages, 0)
+    -- Saved off: nothing registered at login.
+    local off = Mage({restricted = true, saved = {wintersChill = {chime = false}}, before = function(st)
+        Sounds(st)
+        AuraApi(st)
+    end})
+    equal(AuraRegistered(off), "")
+    -- Not a Mage: nothing.
+    local warlock = fixture({restricted = true, before = function(st) Sounds(st); AuraApi(st) end})
+    equal(AuraRegistered(warlock), "")
 end)
 
 test("Winter's Chill chime: waits while Dyre's Buff Reminders older than 1.13.3 still plays its own", function()
@@ -2772,6 +2938,98 @@ test("Winter's Chill chime: Dyre's Buff Reminders' settings come over once, from
     equal(profiled.ddt.db.chimeImported, true, "a copied profile wins over a later import")
     equal(profiled.ddt.ProfileSettings(profiled.ddt.db).wintersChill.noteSet, "sax")
     equal(profiled.ddt.ProfileSettings({chimeImported = true}).chimeImported, true)
+end)
+
+-- The Winter's Chill talent gate (John, 2026-11-23, via the lead: "make sure
+-- this only shows if the player has the talent for it").
+-- Forever without the combat log: Dyre's Sounds, the aura sound API, and a health bar.
+local function Plain(st)
+    Sounds(st)
+    AuraApi(st)
+    st.env.UnitHealth = function() return 100 end
+    st.env.UnitHealthMax = function() return 100 end
+end
+
+local function ChillPlate(state)
+    AddPlate(state, "nameplate1")
+    return state.ddt.chillArcs.byUnit.nameplate1
+end
+
+test("Winter's Chill talent: known by any rank; not known: no arc, no chime, rows greyed; preview works", function()
+    for _, rank in ipairs({11180, 28592, 28593, 28594, 28595}) do
+        local state = Mage({engine = true, restricted = true, talents = {[rank] = true}, before = Plain})
+        assert(ChillPlate(state), "rank " .. rank .. ": the arc")
+        equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav", "rank " .. rank .. ": the chime")
+    end
+    local state = Mage({engine = true, restricted = true, talents = {}, before = Plain})
+    equal(ChillPlate(state), nil, "no talent: no arc")
+    equal(AuraRegistered(state), "", "no talent: no aura sounds (another Mage's chill cannot chime you)")
+    assert(state.ddt.frostArcs.byUnit.nameplate1, "the frozen and chilled arcs do not need it")
+    for _, variable in ipairs({"DDT_CHILL", "DDT_CHILL_SIZE", "DDT_CHILL_OFFSET", "DDT_CHILL_CHIME", "DDT_CHILL_NOTESET"}) do
+        local row = state.settings[variable]
+        assert(row, variable .. " stays visible")
+        equal(row.initializer.modify(), false, variable .. " greyed")
+        contains(row.tooltip or "", "Needs the Winter's Chill talent")
+    end
+    equal(state.ddt.db.wintersChill.enabled, true, "the saved settings stay")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("chill talent not known"), true)
+    -- The preview still shows, so the arc can be placed before the talent.
+    state.plates.target = state.plates.nameplate1
+    equal(state.buttons["Winter's Chill: Preview"](), "started")
+    -- Classic Era: no combat log chime either.
+    local era = Mage({talents = {}, before = function(st) Sounds(st) end})
+    equal(ChimeOn(era), false, "no talent: no combat log chime")
+end)
+
+test("Winter's Chill talent: learned and removed out of combat apply at once; in combat after combat", function()
+    local talents = {}
+    local state = Mage({engine = true, restricted = true, talents = talents, before = Plain})
+    equal(ChillPlate(state), nil)
+    talents[28595] = true
+    emit(state, "SPELLS_CHANGED")
+    assert(state.ddt.chillArcs.byUnit.nameplate1, "learned: the arc at once")
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav", "learned: the chime")
+    equal(state.settings.DDT_CHILL.initializer.modify(), true, "rows active")
+    talents[28595] = nil
+    emit(state, "CHARACTER_POINTS_CHANGED")
+    equal(state.ddt.chillArcs.byUnit.nameplate1, nil, "removed: no arc")
+    equal(AuraRegistered(state), "")
+    -- In combat: the last answer stays until combat ends.
+    talents[11180] = true
+    state.combat = true
+    emit(state, "SPELLS_CHANGED")
+    equal(state.ddt.chillArcs.byUnit.nameplate1, nil, "in combat: no change yet")
+    equal(state.ddt.ChillTalentText(), "not known")
+    state.combat = false
+    emit(state, "PLAYER_REGEN_ENABLED")
+    equal(state.ddt.ChillTalentText(), "known")
+    assert(state.ddt.chillArcs.byUnit.nameplate1, "after combat: the arc")
+    equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav", "after combat: the chime")
+end)
+
+test("Winter's Chill talent: a Forever ID found by name; no API at all shows it, as before", function()
+    local state = Mage({engine = true, talents = {[1311180] = true}, spells = {[11180] = "Winter's Chill"},
+        before = function(st)
+            st.env.C_Spell.GetSpellInfo = function(name)
+                if name == "Winter's Chill" then return {spellID = 1311180} end
+            end
+        end})
+    assert(ChillPlate(state), "the talent by its name")
+    -- The debuff shares the name: never the talent.
+    local debuff = Mage({engine = true, talents = {[12579] = true}, spells = {[11180] = "Winter's Chill"},
+        before = function(st)
+            st.env.C_Spell.GetSpellInfo = function() return {spellID = 12579} end
+        end})
+    equal(ChillPlate(debuff), nil, "the debuff's ID is not the talent")
+    -- No IsPlayerSpell, C_SpellBook.IsSpellKnown, or IsSpellKnown: unreadable, shown.
+    local blind = Mage({engine = true, talents = {}, before = function(st)
+        st.env.C_SpellBook.IsSpellKnown = nil
+        st.env.IsPlayerSpell, st.env.IsSpellKnown = nil, nil
+    end})
+    assert(ChillPlate(blind), "a check that cannot read never hides it")
+    equal(blind.ddt.ChillTalentText(), "unreadable")
+    equal(blind.settings.DDT_CHILL.initializer.modify(), true)
 end)
 
 test("the TOC: optional toolkit, per-character settings, and the five files in order", function()

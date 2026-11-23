@@ -29,7 +29,7 @@ TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + XML_FILES + ("LICENSE",)
 # Mage's arcs are 128 x 32; the client takes any power-of-two sides).
 MEDIA_FILES = ("Textures/Icon.tga", "Textures/FrozenArc.tga", "Textures/ChilledArc.tga",
                "Textures/BrandPentagram.tga", "Textures/BrandGlow.tga",
-               "Textures/ChillBall.tga", "Textures/ChillBalls.tga")
+               "Textures/ChillArc.tga", "Textures/ChillArcFill.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

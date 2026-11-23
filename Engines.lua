@@ -421,13 +421,15 @@ function DDT.Start()
             DDT.frostMissing = tostring(missing)
             DDT.Report("The frozen and chilled arcs stay off: this client lacks " .. tostring(missing) .. ".")
         end
-        -- The Winter's Chill balls, the same way.
+        -- The Winter's Chill talent, read before the arc and the chime use it.
+        DDT.StartChillTalent()
+        -- The Winter's Chill arc, the same way.
         local cells, lacks = DDT.CreateChillArcs(DDT.toolkit, function() return DDT.db.wintersChill end)
         if cells then
             DDT.chillArcs = cells
         else
             DDT.chillMissing = tostring(lacks)
-            DDT.Report("The Winter's Chill balls stay off: this client lacks " .. tostring(lacks) .. ".")
+            DDT.Report("The Winter's Chill arc stays off: this client lacks " .. tostring(lacks) .. ".")
         end
         -- The Winter's Chill stack chime (Chime.lua; Classic Era for now).
         DDT.StartChillChime()
@@ -546,7 +548,7 @@ function DDT.RefreshChill()
 end
 
 -- The Winter's Chill preview on your target's nameplate (the "Preview"
--- button and /ddt preview chill): three of five balls white, no debuff needed.
+-- button and /ddt preview chill): three of five segments white, no debuff needed.
 DDT.CHILL_PREVIEW_TEXT = {
     started = "Winter's Chill preview: on your target's nameplate. Change Size and Height to see them. Press "
         .. "Preview again, or change target, to end it.",
@@ -685,7 +687,7 @@ function DDT.DebugLines()
     else
         lines[#lines + 1] = "frost none (Mage only)"
     end
-    -- The Mage's Winter's Chill balls (Frost.lua).
+    -- The Mage's Winter's Chill arc (Frost.lua).
     if DDT.chillArcs then
         for _, line in ipairs(DDT.chillArcs:DebugLines()) do
             lines[#lines + 1] = "chill " .. line
@@ -694,6 +696,9 @@ function DDT.DebugLines()
         lines[#lines + 1] = "chill off: this client lacks " .. tostring(DDT.chillMissing)
     else
         lines[#lines + 1] = "chill none (Mage only)"
+    end
+    if DDT.class == "MAGE" then
+        lines[#lines + 1] = "chill talent " .. DDT.ChillTalentText()
     end
     lines[#lines + 1] = DDT.ChillChimeDebug()
     -- The Warlock's Demonic Brand pentagram (Frost.lua).

@@ -246,47 +246,72 @@ local function FrostSection(category, layout)
         "The arcs' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshFrost), master, On)
 end
 
--- The Mage's Winter's Chill balls (Frost.lua; John, 2026-11-22: "add a
+-- The Mage's Winter's Chill arc (Frost.lua; John, 2026-11-22: "add a
 -- similar halo above the nameplate ... with up to 5 cells (one per charge)").
--- This AddOn's own, as the arcs: never greyed. Every change applies at once.
+-- This AddOn's own, as the arcs: never greyed for a Tools AddOn, but greyed
+-- without the Winter's Chill talent (John, 2026-11-23: "make sure this only
+-- shows if the player has the talent for it"); Preview, Test chime, and Reset
+-- still work. Every change applies at once.
+local CHILL_TALENT_LINE = " Needs the Winter's Chill talent (Frost)."
+
+local function NeedsTalent(initializer)
+    if initializer and type(initializer.AddModifyPredicate) == "function" then
+        initializer:AddModifyPredicate(DDT.ChillTalentKnown)
+    end
+    return initializer
+end
+
 local function ChillSection(category, layout)
     if DDT.class ~= "MAGE" or not DDT.chillArcs then
         return
     end
     Heading(layout, "Winter's Chill")
-    local master = Flag(category, "DDT_CHILL", "Show", Chill, "enabled", true,
-        "Five blue frost balls above an enemy's nameplate while your Winter's Chill is on it: one more turns white with each stack, up to "
-            .. DDT.CHILL_MOST .. ", as combo points. Your Frost spells add the stacks.", DDT.RefreshChill)
+    local master = NeedsTalent(Flag(category, "DDT_CHILL", "Show", Chill, "enabled", true,
+        "A blue ice arc of five segments above an enemy's nameplate while your Winter's Chill is on it: one more segment turns white with each stack, up to "
+            .. DDT.CHILL_MOST .. ", as combo points. Your Frost spells add the stacks." .. CHILL_TALENT_LINE,
+        DDT.RefreshChill))
     local function On() return DDT.db.wintersChill.enabled end
     local offset, size = DDT.CHILL_OFFSET, DDT.CHILL_SIZE
-    Nest(Slider(category, "DDT_CHILL_SIZE", "Size", Chill, "size", size.default, size.min, size.max,
-        "The balls' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshChill,
-        function(value) return string.format("%d%%", value) end), master, On)
-    Nest(Slider(category, "DDT_CHILL_OFFSET", "Height above nameplate", Chill, "offset", offset.default, offset.min,
-        offset.max, "How far above the nameplate's health bar the balls sit, in pixels: " .. offset.min .. " to "
-            .. offset.max .. ". The default sits above the frozen and chilled arcs.", DDT.RefreshChill), master, On)
+    NeedsTalent(Nest(Slider(category, "DDT_CHILL_SIZE", "Size", Chill, "size", size.default, size.min, size.max,
+        "The arc's size, in percent: " .. size.min .. " to " .. size.max .. "." .. CHILL_TALENT_LINE, DDT.RefreshChill,
+        function(value) return string.format("%d%%", value) end), master, On))
+    NeedsTalent(Nest(Slider(category, "DDT_CHILL_OFFSET", "Height above nameplate", Chill, "offset", offset.default,
+        offset.min, offset.max, "How far above the nameplate's health bar the arc sits, in pixels: " .. offset.min
+            .. " to " .. offset.max .. ". The default sits above the frozen and chilled arcs." .. CHILL_TALENT_LINE,
+        DDT.RefreshChill), master, On))
     Button(layout, "Winter's Chill", "Preview", DDT.PreviewChill,
-        "Shows the balls on your target's nameplate with no Winter's Chill on it (" .. DDT.CHILL_PREVIEW .. " of "
+        "Shows the arc on your target's nameplate with no Winter's Chill on it (" .. DDT.CHILL_PREVIEW .. " of "
             .. DDT.CHILL_MOST .. " white), so you can set Size and Height. Press again, or change target, to end it.")
-    -- The stack chime (Chime.lua): where the combat log runs (Classic Era).
-    if DDT.ChillChimeUsable() then
-        Flag(category, "DDT_CHILL_CHIME", "Stack chime", Chill, "chime", true,
-            "A note as each stack of your Winter's Chill goes on a mob: rising from 1 to " .. (DDT.CHILL_MOST - 1)
+    -- The stack chime (Chime.lua): the combat log (Classic Era) or the game's
+    -- aura sounds (WoW: Forever).
+    local chimeMode = DDT.ChillChimeMode()
+    if chimeMode then
+        local about = chimeMode == "aura"
+            and ("A note when Winter's Chill goes on your target, and another note as each stack after it goes on "
+                .. "(this client cannot count the stacks, so the notes do not rise). A stack that drops, or the "
+                .. "debuff ending, plays nothing. Another Mage's Winter's Chill on your target may chime too. "
+                .. "Needs Dyre's Sounds.")
+            or ("A note as each stack of your Winter's Chill goes on a mob: rising from 1 to " .. (DDT.CHILL_MOST - 1)
                 .. ", and a held high note at " .. DDT.CHILL_MOST .. ". A stack that drops, or the debuff ending, "
-                .. "plays nothing. Only your target's stacks chime; another Mage's Winter's Chill does not. Needs Dyre's Sounds.",
-            DDT.RefreshChillChime)
+                .. "plays nothing. Only your target's stacks chime; another Mage's Winter's Chill does not. "
+                .. "Needs Dyre's Sounds.")
+        NeedsTalent(Flag(category, "DDT_CHILL_CHIME", "Stack chime", Chill, "chime", true, about .. CHILL_TALENT_LINE,
+            DDT.RefreshChillChime))
         local function ChimeOn() return DDT.db.wintersChill.chime end
         local sets = {}
         for _, key in ipairs(DDT.CHILL_CHIME_ORDER) do
             sets[#sets + 1] = {key, DDT.CHILL_CHIME_SETS[key].label}
         end
         local noteSet = Choice(category, "DDT_CHILL_NOTESET", "Note set", Chill, "noteSet", DDT.CHILL_CHIME_DEFAULT,
-            sets, "The chime's instrument, from Dyre's Sounds.", function()
-                DDT.PlayChillNote(DDT.ChillChimeNote(DDT.CHILL_MOST, DDT.db.wintersChill.noteSet), "Winter's Chill")
+            sets, "The chime's instrument, from Dyre's Sounds." .. CHILL_TALENT_LINE, function()
+                DDT.RefreshChillChime()
+                DDT.PlayChillNote(DDT.ChillChimeNote(DDT.CHILL_MOST, DDT.db.wintersChill.noteSet, chimeMode),
+                    "Winter's Chill")
             end)
         if noteSet and type(noteSet.AddModifyPredicate) == "function" then
             noteSet:AddModifyPredicate(ChimeOn)
         end
+        NeedsTalent(noteSet)
         Button(layout, "Winter's Chill", "Test chime", DDT.TestChillChime,
             "Plays the chime for stacks 1 to " .. DDT.CHILL_MOST .. ", one after another.")
     end
