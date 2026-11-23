@@ -1,6 +1,6 @@
-"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots] [--arcs] [--brand]
+"""Run from the AddOn folder: python scripts/make_artwork.py [--logo] [--icon] [--screenshots] [--arcs] [--brand] [--chill]
 
-Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all five):
+Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all six):
 - artwork/dyres-debuff-tracker-logo.svg, the 1024 x 1024 vector source: the
   family's dark-brown field and fine gold border (as Dyre's Debuff Tracker's and
   Warlock Tools Forever's logos), a gold clock dial with twelve ticks, a
@@ -25,6 +25,16 @@ Makes Dyre's Debuff Tracker's artwork, reproducibly (no option: all five):
   red with a bright core and a dark rim, as SVG rendered with headless
   Chrome as the arcs are. Glow: a soft red halo, computed here (no Chrome),
   drawn behind the star with additive blending. Our own art.
+- Textures/ChillBall.tga (64 x 64) and Textures/ChillBalls.tga (256 x 64),
+  the Mage's Winter's Chill stacks above enemy nameplates (John,
+  2026-11-22: "blue frostballs that turn white as the stack builds"), the
+  same TGA format, computed here (no Chrome). A frosted ball, near white
+  with a cool shade, lit from the top left, a bright highlight, a frosty
+  rim, 49 pixels across in a 64-pixel cell (10 of 13 pixels in the game).
+  The game tints it: blue while empty, white while lit. ChillBall is one
+  ball; ChillBalls is four in a row, the status bar's fill, which the game
+  crops (not stretches) as it fills, so the fill shows whole balls. Our own
+  art.
 - artwork/screenshots/*.png, listing crops of John's raw screenshots (the
   CROPS table: source file, box in source pixels), cut by headless Chrome,
   which decodes WebP. The raw files are never changed.
@@ -384,6 +394,51 @@ def glow_texture():
     return texture
 
 
+CHILL_CELL, CHILL_BALL, CHILL_SAMPLES = 64, 49, 4
+# The light: from the top left, toward the viewer (screen y points down).
+CHILL_LIGHT = (-0.45, -0.55, 0.70)
+
+
+def frost_ball(nx, ny):
+    """The ball's color and alpha at a point, in ball radii from its center."""
+    d = math.hypot(nx, ny)
+    if d >= 1:
+        return (0.0, 0.0, 0.0, 0.0)
+    nz = math.sqrt(1 - d * d)
+    lx, ly, lz = CHILL_LIGHT
+    length = math.sqrt(lx * lx + ly * ly + lz * lz)
+    diffuse = max(0.0, (nx * lx + ny * ly + nz * lz) / length)
+    shade = 0.5 + 0.5 * diffuse
+    # A frosty rim (brighter near the edge) and a dark outline at the edge.
+    shade += 0.25 * d ** 6
+    shade *= 1 - 0.55 * max(0.0, (d - 0.88) / 0.12) ** 2
+    spot = math.exp(-(((nx + 0.38) ** 2 + (ny + 0.42) ** 2) / 0.035))
+    r, g, b = (min(1.0, shade * c + spot) for c in (0.90, 0.96, 1.0))
+    return (r, g, b, 1.0)
+
+
+def chill_texture(balls):
+    """balls cells of CHILL_CELL pixels in a row, one ball centered in each,
+    sampled CHILL_SAMPLES x CHILL_SAMPLES: rows of (r, g, b, a) floats."""
+    n, radius, texture = CHILL_SAMPLES, CHILL_BALL / 2, []
+    for y in range(CHILL_CELL):
+        row = []
+        for x in range(CHILL_CELL * balls):
+            cx = (x // CHILL_CELL) * CHILL_CELL + CHILL_CELL / 2
+            color, alpha = [0.0, 0.0, 0.0], 0.0
+            for sy in range(n):
+                for sx in range(n):
+                    px, py = x + (sx + 0.5) / n, y + (sy + 0.5) / n
+                    r, g, b, a = frost_ball((px - cx) / radius, (py - CHILL_CELL / 2) / radius)
+                    alpha += a
+                    color[0] += r * a
+                    color[1] += g * a
+                    color[2] += b * a
+            row.append(tuple(v / alpha for v in color) + (alpha / (n * n),) if alpha else (0.0, 0.0, 0.0, 0.0))
+        texture.append(row)
+    return texture
+
+
 def svg_texture(svg, work, width=ARC_W, height=ARC_H):
     """The SVG on black and on white (the two shots give the alpha), averaged
     ARC_SAMPLES x ARC_SAMPLES: rows of (r, g, b, a) floats 0-1."""
@@ -437,6 +492,11 @@ def make_brand(work):
     write_tga(ROOT / "Textures" / "BrandGlow.tga", glow_texture())
 
 
+def make_chill():
+    write_tga(ROOT / "Textures" / "ChillBall.tga", chill_texture(1))
+    write_tga(ROOT / "Textures" / "ChillBalls.tga", chill_texture(4))
+
+
 def make_logo(work):
     LOGO.write_text(svg(), encoding="utf-8", newline="\n")
     shoot(LOGO, ART / "dyres-debuff-tracker-logo.png", 1024, 1024)
@@ -469,13 +529,15 @@ def make_screenshots(work):
 
 
 def main(args):
-    wanted = set(args) or {"--logo", "--icon", "--screenshots", "--arcs", "--brand"}
+    wanted = set(args) or {"--logo", "--icon", "--screenshots", "--arcs", "--brand", "--chill"}
     with tempfile.TemporaryDirectory() as temp:
         work = Path(temp)
         if "--arcs" in wanted:
             make_arcs(work)
         if "--brand" in wanted:
             make_brand(work)
+        if "--chill" in wanted:
+            make_chill()
         if "--logo" in wanted:
             make_logo(work)
         if "--icon" in wanted:

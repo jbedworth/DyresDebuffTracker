@@ -20,7 +20,7 @@ from pathlib import Path
 
 
 ADDON = "DyresDebuffTracker"
-RUNTIME_FILES = ("Core.lua", "Engines.lua", "Frost.lua", "Options.lua")
+RUNTIME_FILES = ("Core.lua", "Engines.lua", "Frost.lua", "Chime.lua", "Options.lua")
 # The Warlock's smart curse key binding (the client loads Bindings.xml by name).
 XML_FILES = ("Bindings.xml",)
 TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + XML_FILES + ("LICENSE",)
@@ -28,7 +28,8 @@ TEXT_FILES = (ADDON + ".toc",) + RUNTIME_FILES + XML_FILES + ("LICENSE",)
 # The builder requires uncompressed 32-bit TGAs with power-of-two sides (the
 # Mage's arcs are 128 x 32; the client takes any power-of-two sides).
 MEDIA_FILES = ("Textures/Icon.tga", "Textures/FrozenArc.tga", "Textures/ChilledArc.tga",
-               "Textures/BrandPentagram.tga", "Textures/BrandGlow.tga")
+               "Textures/BrandPentagram.tga", "Textures/BrandGlow.tga",
+               "Textures/ChillBall.tga", "Textures/ChillBalls.tga")
 PACKAGE_FILES = TEXT_FILES + MEDIA_FILES
 TGA_HEADER_SIZE = 18
 TGA_TRUECOLOR = 2

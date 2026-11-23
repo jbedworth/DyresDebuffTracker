@@ -269,7 +269,9 @@ character knows, at its best rank; none for a spell it does not know.
     `predict` (every setting, with the DIES places and offsets), and
     `control` (enabled, plateTimers, macros, say, position, scale, markers,
     announce, texts, width, barHeight, textScale, opacity), `frost` (the Mage's arcs: enabled, offset, size),
-    `brand` (the Warlock's Demonic Brand pentagram: enabled, offset, size), and
+    `brand` (the Warlock's Demonic Brand pentagram: enabled, offset, size),
+    `wintersChill` (the Mage's Winter's Chill balls: enabled, offset, size,
+    chime, noteSet), `chimeImported` (DBR's chime settings copied once), and
     `toolsImported` (the class Tools AddOn's settings copied once).
   - `characterKeys` = {"macrosOwned"}: the names of the character macros
     this AddOn keeps (the control tracker's keeper `owned`); macros are per
@@ -285,7 +287,7 @@ character knows, at its best rank; none for a spell it does not know.
     profile).
   `DDT.ProfileSettings(settings)`: any table (empty, partial, older, newer,
   another class's) through SanitizeDB with this character's class table;
-  only dots, predict, control, frost, brand, and macrosOwned are kept; never errors.
+  only dots, predict, control, frost, brand, wintersChill, toolsImported, chimeImported, and macrosOwned are kept; never errors.
   `DDT.ApplyProfile` (refresh; the Toolkit writes DDT.db in place and
   applies only out of combat): `ReapplyWidgets` (the control bar's place and
   scale), the DoT tracker's `ResetPosition` (the panels' places),
@@ -343,6 +345,75 @@ character knows, at its best rank; none for a spell it does not know.
   again, so the sliders and Reset apply live; it stays while "Show" is off.
   It ends on a second press, PLAYER_TARGET_CHANGED, PLAYER_LOGOUT, or
   NAME_PLATE_UNIT_REMOVED for its plate. Not saved.
+- Winter's Chill cells, Mage only, both clients (John, 2026-11-22: "add a
+  similar halo above the nameplate (we do for chilled/frozen) with up to 5
+  cells (one per charge) (like a rogue/druid combo-point counter)"; he
+  noted DBR's Era chime is next to useless: it is a mob debuff; then the
+  same day: "I'm thinking blue frostballs that turn white as the stack
+  builds", and "DBR should remove it's broken chime"). Frost.lua
+  `DDT.CreateChillArcs` with the shared `CreateArcs`: one slot `chill`,
+  filter `HARMFUL|PLAYER`, ID 12579 (a set; `DDT.CHILL_SPELLS`); Wowhead
+  forever/spell=11180 (the talent's proc triggers 12579), forever and
+  classic spell=12579 (15 s, Magic; Forever flags "DoT Stacking Rule" and
+  "Nameplate Personal Buffs/Debuffs"; Forever: Cone of Cold damage taken,
+  Era: crit chance), warcraft.wiki.gg (5 stacks); not checked in client.
+  Made for a Mage when `DDT.ChillKnown()` (`DDT.SpellKnown(12579)`), else
+  one chat line and `chill off: ...` in `/ddt debug`. `CHILL_LOOK`: 13 x 13
+  cells (`DDT.CHILL_CELL`), five balls (Textures/ChillBall.tga, BORDER,
+  tinted blue, `DDT.CHILL_COLORS.empty`), ball 1 white (ARTWORK, the same
+  art tinted white; shows whenever the engine shows the button, so a count
+  of 0 or 1 at one stack both read as one), and a StatusBar over balls 2 to
+  5 whose fill is Textures/ChillBalls.tga (four balls, 256 x 64, tinted
+  white; the game crops a status bar's fill as it fills, so whole balls
+  show: not checked in client, TESTING.md), handed to the engine's `SetApplicationBar(bar, {minApplications = 1,
+  maxApplications = 5})`: the engine sets the range, the value (the stacks;
+  in combat a secret the bar takes), and shows it from 1
+  (Blizzard_CustomAuraButton.lua ApplyApplicationBar, Gethe 943764493e6b;
+  one application bar per button). Each stack's fill ends between two
+  balls. Both TGAs are 64-pixel cells with a 49-pixel ball (10 of 13 in
+  game), made by scripts/make_artwork.py --chill (our own art); new TGA
+  files need a full client restart. No SetApplicationBar, or a failing
+  call: the bar hides (ball 1 only). Era's plain-Lua container
+  gates the bar from Toolkit 2.11.0; older: cell 1 only
+  (`DDT.TOOLKIT_VERSION` stays 2.9.1). `db.wintersChill` = {enabled (true),
+  offset (0-60, 36: above the arcs' 33), size (50-200, 100)}, in SanitizeDB
+  and the profile (`DDT.RefreshChill`). Options `ChillSection` after
+  FrostSection: "Show", "Size", "Height above nameplate", "Preview"
+  (`DDT.PreviewChill`; the preview frame's bar is set to
+  `DDT.CHILL_PREVIEW` = 3; `look.Draw` gets a 4th argument, `preview`), and
+  "Reset Winter's Chill". `/ddt preview chill`, and `/ddt preview` for a
+  Mage.
+- Winter's Chill stack chime, Mage (John, 2026-11-22, via the lead: "2,
+  remove it, build it right in DDT"; DBR 1.13.3 removes its Era chime).
+  Chime.lua, from DBR 1.9.0-1.13.2's Procs.lua design: the combat log
+  (SPELL_AURA_APPLIED = stack 1, SPELL_AURA_APPLIED_DOSE = the count, capped
+  at 5), your own source GUID, only on your target (dest GUID ==
+  `UnitGUID("target")`; John, 2026-11-23: "Just like Rogue combo points, if
+  we do chimes, it should only be for the player's primary target"), ID 12579 or the spell's name (Classic's log
+  gave ID 0); notes 1-4 rise, 5 is the set's held note
+  (`DDT.CHILL_CHIME_SETS` bassoon/sax from Dyre's Sounds, sax fallback for
+  a Dyre's Sounds without bassoon). Gate: a Mage and the Toolkit's
+  `CombatLogUsable()` (an API gate; Forever refuses the log, so no Forever
+  chime and no rows: the lead holds Forever for John's answer to question
+  2; Forever's only path is `C_UnitAuras.AddAuraSound`, one fixed sound per
+  trigger (Added, ApplicationsIncreased), no stack condition, no source
+  filter, so it cannot rise and another Mage's debuff may chime: the lead
+  accepted that note for when it is built). The log is registered only
+  while `db.wintersChill.chime` is on and DBR is not loaded at a version
+  older than 1.13.3 (or unreadable): then one login line ("The Winter's
+  Chill chime waits") and no second chime (lead's answer 4).
+  `db.wintersChill.chime` (true) and `noteSet` ("bassoon"), in SanitizeDB
+  and the profile. Rows (only where the chime is usable): "Stack chime",
+  "Note set" (a pick plays its held note), "Test chime" (1 at once, 2-5 by
+  C_Timer, 0.3 s apart); Reset Winter's Chill resets them too. `/ddt debug`
+  has a `chime` line. The import `DDT.ImportChillChime` (Core.lua; the
+  ImportFromTools rules): once per character (`db.chimeImported`, in the
+  profile; a profile copy sets it), Mage only, from
+  `DyresBuffRemindersDB.wintersChill` = {enabled, noteSet} (per character,
+  DBR's TOC; DBR 1.13.3 keeps it as saved for one release), read only,
+  DBR's rules (`enabled ~= false`; noteSet only bassoon or sax); waits
+  while DBR older than 1.13.3 is loaded; DBR not loaded: done. TOC
+  `## OptionalDeps: DyresToolkit, DyresSounds` (load order only).
 - Frozen and chilled arcs, Mage only (John, 2026-11-18: "a frozen/icy arc
   above the chilled and frozen mobs nameplates (2 different looking
   visuals, I think a mob can be both frozen and chilled)"; lead's spec the
@@ -496,14 +567,17 @@ character knows, at its best rank; none for a spell it does not know.
   `C:\Games\WoW\World of Warcraft\_forever_\Interface\AddOns` and
   `_classic_era_\Interface\AddOns` (never `_classic_beta_`), and cmp-check
   them. Install only the TOC, the Lua files the TOC lists, Bindings.xml, the
-  Textures (Icon.tga, FrozenArc.tga, ChilledArc.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
+  Textures (Icon.tga, FrozenArc.tga, ChilledArc.tga, BrandPentagram.tga,
+  BrandGlow.tga, ChillBall.tga, ChillBalls.tga), and LICENSE. It needs Dyre's Toolkit 2.9.1 installed beside it.
 
 ## Project structure
 
 - Runtime: DyresDebuffTracker.toc, Core.lua, Engines.lua, Frost.lua,
-  Options.lua (loaded in that order), Bindings.xml (the smart curse key
+  Chime.lua, Options.lua (loaded in that order), Bindings.xml (the smart curse key
   binding; the client loads it by name), Textures/Icon.tga (the TOC icon), and
-  Textures/FrozenArc.tga and ChilledArc.tga (the Mage's arcs).
+  Textures/FrozenArc.tga and ChilledArc.tga (the Mage's arcs),
+  BrandPentagram.tga and BrandGlow.tga (the Warlock's Demonic Brand), and
+  ChillBall.tga and ChillBalls.tga (the Mage's Winter's Chill balls).
 - scripts/make_artwork.py: makes the logo (SVG, rendered to PNG with headless
   Chrome as the family's logos are), Textures/Icon.tga, the arcs
   (`--arcs`, plain Python), and the listing screenshot crops. Change the art there, not in its outputs; see

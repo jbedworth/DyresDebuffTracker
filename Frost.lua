@@ -19,7 +19,8 @@ local addonName, DDT = ...
 -- Each holder sits on the bar the Toolkit's FindPlateBar finds (Plater,
 -- Threat Plates, and the others, as DIES does), else on the plate.
 -- Events only: no OnUpdate, no polling.
--- The same builder draws the Warlock's Demonic Brand pentagram (below).
+-- The same builder draws the Warlock's Demonic Brand pentagram and the
+-- Mage's Winter's Chill frost balls (below).
 
 -- The debuffs, from local sources only (never guessed):
 --   TFB  TalentsForeverBook's Data.lua (Forever beta build 1.60.1.70755,
@@ -99,6 +100,40 @@ DDT.BRAND_SPELL = 1293696
 DDT.BRAND_OFFSET = {min = 0, max = 60, default = 10}
 DDT.BRAND_SIZE = {min = 50, max = 200, default = 100}
 
+-- Winter's Chill, for Mages (John, 2026-11-22: "add a similar halo above the
+-- nameplate (we do for chilled/frozen) with up to 5 cells (one per charge)
+-- (like a rogue/druid combo-point counter)"; then the same day: "I'm thinking
+-- blue frostballs that turn white as the stack builds"). A Frost talent: your Frost
+-- spells may put Winter's Chill on the target, up to 5 stacks. Sources (web,
+-- 2026-11-22; not yet checked in the client, TESTING.md asks for a /dump):
+--   Wowhead forever/spell=11180: the talent; its proc triggers spell 12579.
+--   Wowhead forever/spell=12579: the debuff, 15 sec, Magic, flags "DoT
+--        Stacking Rule" and "Nameplate Personal Buffs/Debuffs"; more damage
+--        taken from the caster's Cone of Cold (Forever).
+--   Wowhead classic/spell=12579: the same ID on Classic Era, 15 sec, 2% more
+--        critical strike chance against the target per stack.
+--   warcraft.wiki.gg Winter's_Chill: 5 stacks, on both clients.
+-- Only your own: on Forever it helps only your Cone of Cold, and "DoT
+-- Stacking Rule" gives each Mage a debuff of their own. (On Classic Era any
+-- Mage's Winter's Chill helps you; the slot still shows only yours.)
+DDT.CHILL_SPELLS = {
+    chill = {filter = "HARMFUL|PLAYER", ids = {12579}},
+}
+DDT.CHILL_ORDER = {"chill"}
+DDT.CHILL_SPELL = 12579
+DDT.CHILL_MOST = 5
+-- Height: pixels from the plate's bar to the balls' bottom, clear of the
+-- frozen and chilled arcs at their defaults (they reach 33). Size: percent.
+DDT.CHILL_OFFSET = {min = 0, max = 60, default = 36}
+DDT.CHILL_SIZE = {min = 50, max = 200, default = 100}
+-- One ball's cell, in pixels at 100%: a 13 x 13 square, the ball 10 across
+-- in its middle (Textures/ChillBall.tga: 49 of 64 pixels).
+DDT.CHILL_CELL = 13
+-- The game tints the near-white ball: blue while empty, white while lit.
+DDT.CHILL_COLORS = {empty = {0.25, 0.5, 1, 0.9}, lit = {1, 1, 1, 1}}
+-- The stacks the preview shows: some balls lit, some empty.
+DDT.CHILL_PREVIEW = 3
+
 -- A set, not a list: the engine matches nothing with a list (the Toolkit's
 -- Procs.lua, from DSU's Shield.lua, found in client).
 local function Set(list)
@@ -151,6 +186,56 @@ local BRAND_LOOK = {width = DDT.BRAND_GLOW, height = DDT.BRAND_GLOW,
                 pulse:Play()
             end
             holder.pulse = pulse
+        end
+    end}
+
+-- Winter's Chill stacks, one frost ball per stack (combo-point style; John:
+-- "blue frostballs that turn white as the stack builds"). AddOn code cannot
+-- read the stack count in combat on Forever, so the game lights the balls:
+-- the engine's SetApplicationBar(bar, {minApplications, maxApplications})
+-- sets the bar's range to them, its value to the stacks, and shows it from
+-- minApplications up (Blizzard_CustomAuraButton.lua ApplyApplicationBar;
+-- options in AuraContainerUtilDocumentation.lua; Gethe wow-ui-source
+-- 943764493e6b). The Toolkit's plain-Lua container (Classic Era) does the
+-- same. Five blue balls (Textures/ChillBall.tga, tinted); ball 1 is white
+-- whenever the debuff shows, so a stack count of 0 or 1 for one stack both
+-- read as one ball. The bar covers balls 2 to 5 (range 1 to 5); its fill is
+-- Textures/ChillBalls.tga, four white balls in a row, which the game crops
+-- as the bar fills, and each stack's fill ends between two balls, so whole
+-- balls turn white. A client without SetApplicationBar (or a call that
+-- fails) shows ball 1 only.
+local CHILL_BALL, CHILL_BALLS = TEXTURES .. "ChillBall", TEXTURES .. "ChillBalls"
+local CHILL_LOOK = {width = DDT.CHILL_MOST * DDT.CHILL_CELL, height = DDT.CHILL_CELL,
+    Draw = function(button, holder, _, preview)
+        local cell, colors = DDT.CHILL_CELL, DDT.CHILL_COLORS
+        button:SetPoint("BOTTOM", holder, "BOTTOM", 0, 0)
+        button:SetSize(DDT.CHILL_MOST * cell, cell)
+        for index = 1, DDT.CHILL_MOST do
+            local empty = button:CreateTexture(nil, "BORDER")
+            empty:SetTexture(CHILL_BALL)
+            empty:SetVertexColor(unpack(colors.empty))
+            empty:SetSize(cell, cell)
+            empty:SetPoint("LEFT", button, "LEFT", (index - 1) * cell, 0)
+        end
+        local first = button:CreateTexture(nil, "ARTWORK")
+        first:SetTexture(CHILL_BALL)
+        first:SetVertexColor(unpack(colors.lit))
+        first:SetSize(cell, cell)
+        first:SetPoint("LEFT", button, "LEFT", 0, 0)
+        local bar = CreateFrame("StatusBar", nil, button)
+        bar:SetPoint("LEFT", button, "LEFT", cell, 0)
+        bar:SetSize((DDT.CHILL_MOST - 1) * cell, cell)
+        bar:EnableMouse(false)
+        bar:SetStatusBarTexture(CHILL_BALLS)
+        bar:SetStatusBarColor(unpack(colors.lit))
+        bar:SetMinMaxValues(1, DDT.CHILL_MOST)
+        bar:SetValue(1)
+        holder.bar = bar
+        if preview then
+            bar:SetValue(DDT.CHILL_PREVIEW)
+        elseif not (type(button.SetApplicationBar) == "function" and pcall(button.SetApplicationBar, button, bar,
+                {minApplications = 1, maxApplications = DDT.CHILL_MOST})) then
+            bar:Hide()
         end
     end}
 
@@ -291,7 +376,7 @@ local function CreateArcs(toolkit, store, spec)
             for _, key in ipairs(spec.order) do
                 local button = CreateFrame("Frame", nil, preview)
                 button:EnableMouse(false)
-                spec.look.Draw(button, preview, key)
+                spec.look.Draw(button, preview, key, true)
                 preview.arcs[key] = button
             end
             preview:Hide()
@@ -425,16 +510,25 @@ function DDT.CreateFrostArcs(toolkit, store)
         offset = DDT.FROST_OFFSET, size = DDT.FROST_SIZE, look = FROST_LOOK})
 end
 
--- True when this client knows the Demonic Brand debuff (Forever). A static
--- spell lookup: no aura, no talent.
-function DDT.BrandKnown()
+-- True when this client knows the spell. A static spell lookup: no aura, no talent.
+function DDT.SpellKnown(spellID)
     local name
     if type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function" then
-        name = C_Spell.GetSpellName(DDT.BRAND_SPELL)
+        name = C_Spell.GetSpellName(spellID)
     elseif type(GetSpellInfo) == "function" then
-        name = GetSpellInfo(DDT.BRAND_SPELL)
+        name = GetSpellInfo(spellID)
     end
     return type(name) == "string" and name ~= ""
+end
+
+-- True when this client knows the Demonic Brand debuff (Forever).
+function DDT.BrandKnown()
+    return DDT.SpellKnown(DDT.BRAND_SPELL)
+end
+
+-- True when this client knows the Winter's Chill debuff (both clients).
+function DDT.ChillKnown()
+    return DDT.SpellKnown(DDT.CHILL_SPELL)
 end
 
 -- The Warlock's Demonic Brand pentagram; store: function() -> DDT.db.brand.
@@ -444,4 +538,13 @@ function DDT.CreateBrandArcs(toolkit, store)
     end
     return CreateArcs(toolkit, store, {spells = DDT.BRAND_SPELLS, order = DDT.BRAND_ORDER,
         offset = DDT.BRAND_OFFSET, size = DDT.BRAND_SIZE, look = BRAND_LOOK})
+end
+
+-- The Mage's Winter's Chill frost balls; store: function() -> DDT.db.wintersChill.
+function DDT.CreateChillArcs(toolkit, store)
+    if not DDT.ChillKnown() then
+        return nil, "Winter's Chill (" .. DDT.CHILL_SPELL .. ")"
+    end
+    return CreateArcs(toolkit, store, {spells = DDT.CHILL_SPELLS, order = DDT.CHILL_ORDER,
+        offset = DDT.CHILL_OFFSET, size = DDT.CHILL_SIZE, look = CHILL_LOOK})
 end

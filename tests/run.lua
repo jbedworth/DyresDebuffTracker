@@ -24,7 +24,7 @@ local TOOLKIT_FILES = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", 
     "DotTracker.lua", "PlateDots.lua", "DotPredict.lua"}
 local OLD_TOOLKIT = {"Core.lua", "Layout.lua", "Widgets.lua", "Settings.lua", "Auras.lua", "Units.lua",
     "HealthBars.lua"}
-local RUNTIME = {"Core.lua", "Engines.lua", "Frost.lua", "Options.lua"}
+local RUNTIME = {"Core.lua", "Engines.lua", "Frost.lua", "Chime.lua", "Options.lua"}
 local tests = {}
 
 local function test(name, body)
@@ -71,6 +71,10 @@ local function newFrame(state, kind, name, parent, template)
     function frame:GetFrameLevel() return self.level end
     function frame:SetFrameLevel(level) self.level = level end
     function frame:SetScale(scale) self.scale = scale end
+    function frame:SetMinMaxValues(low, high) self.range = {low, high} end
+    function frame:SetValue(value) self.value = value end
+    function frame:SetStatusBarTexture(path) self.barTexture = path end
+    function frame:SetStatusBarColor(...) self.barColor = {...} end
     function frame:GetScale() return self.scale end
     function frame:GetEffectiveScale() return self.scale end
     function frame:SetAlpha(alpha) self.alpha = alpha end
@@ -96,6 +100,9 @@ local function newFrame(state, kind, name, parent, template)
         local texture = stub({layer = layer, groups = {}})
         function texture:SetTexture(path) self.path = path end
         function texture:SetBlendMode(mode) self.blend = mode end
+        function texture:SetColorTexture(...) self.color = {...} end
+        function texture:SetVertexColor(...) self.tint = {...} end
+        function texture:SetPoint(...) self.point = {...} end
         function texture:SetSize(width, height) self.width, self.height = width, height end
         function texture:CreateAnimationGroup()
             local group = stub({animations = {}})
@@ -137,7 +144,9 @@ local SPELLS = {[172] = "Corruption", [348] = "Immolate", [980] = "Curse of Agon
     [133] = "Fireball", [11366] = "Pyroblast", [8921] = "Moonfire", [339] = "Entangling Roots",
     [2637] = "Hibernate", [1978] = "Serpent Sting", [1513] = "Scare Beast", [589] = "Shadow Word: Pain",
     [9484] = "Shackle Undead", [1943] = "Rupture", [6770] = "Sap", [2094] = "Blind", [8050] = "Flame Shock",
-    [772] = "Rend", [5246] = "Intimidating Shout", [1715] = "Hamstring", [2878] = "Turn Undead", [20066] = "Repentance"}
+    [772] = "Rend", [5246] = "Intimidating Shout", [1715] = "Hamstring", [2878] = "Turn Undead", [20066] = "Repentance",
+    -- Both clients know the Winter's Chill debuff.
+    [12579] = "Winter's Chill"}
 
 -- The client for one character: its class, its spells, the AddOns loaded.
 local function fixture(options)
@@ -160,6 +169,7 @@ local function fixture(options)
             frame.slots, frame.unit = {}, "none"
             function frame:AddAuraSlot(key, filter, slotOptions)
                 local button = newFrame(state, "Button", nil, self)
+                function button:SetApplicationBar(bar, barOptions) self.applicationBar = {bar, barOptions} end
                 self.slots[#self.slots + 1] = {key = key, filter = filter, options = slotOptions, button = button}
                 slotOptions.initializeFrame(button)
             end
@@ -2187,6 +2197,289 @@ test("Default marks: every slider gets the gold mark at its own default", functi
     assert(count >= 30, "sliders checked: " .. count)
 end)
 
+-- The Mage's Winter's Chill balls (John, 2026-11-22: "add a similar halo
+-- above the nameplate (we do for chilled/frozen) with up to 5 cells (one per
+-- charge) (like a rogue/druid combo-point counter)"; then: "blue frostballs
+-- that turn white as the stack builds").
+local function LitCells(holder, button)
+    -- Ball 1 shows white with the button; the bar's fill covers balls 2 to 5.
+    if not button.shown then
+        return 0
+    end
+    local bar = holder.bar
+    if not bar.shown then
+        return 1
+    end
+    return math.max(1, math.floor(bar.value or 1))
+end
+
+test("Winter's Chill balls: Mages only, on by default, rows, repaired, both clients", function()
+    local warlock = fixture({spells = BRAND})
+    equal(warlock.ddt.chillArcs, nil, "no balls for a Warlock")
+    equal(warlock.settings.DDT_CHILL, nil, "no rows for other classes")
+    local state = Mage()
+    assert(state.ddt.chillArcs, "a Mage has the balls")
+    equal(state.settings.DDT_CHILL.default, true)
+    equal(state.settings.DDT_CHILL.name, "Show")
+    equal(state.settings.DDT_CHILL_SIZE.default, 100)
+    equal(state.settings.DDT_CHILL_SIZE.labelFormatter(150), "150%")
+    equal(state.settings.DDT_CHILL_OFFSET.default, 36)
+    equal(state.settings.DDT_CHILL_OFFSET.name, "Height above nameplate")
+    assert(state.heading("DoTs: Winter's Chill"), "its heading on the DoTs page")
+    assert(state.buttons["Winter's Chill: Preview"] and state.buttons["Winter's Chill: Reset Winter's Chill"])
+    equal(state.ddt.db.wintersChill.enabled, true, "on by default")
+    equal(#state.messages, 0)
+    -- After the frozen and chilled rows, before nothing of the Brand's (a Mage has none).
+    local frozenAt, chillAt
+    for index, heading in ipairs(state.headings) do
+        if heading == "DoTs: Frozen and chilled" then frozenAt = index end
+        if heading == "DoTs: Winter's Chill" then chillAt = index end
+    end
+    assert(frozenAt and chillAt and chillAt > frozenAt, "after Frozen and chilled")
+    local bad = Mage({saved = {wintersChill = {enabled = "yes", offset = -5, size = 999}}}).ddt.db.wintersChill
+    equal(bad.enabled, true)
+    equal(bad.offset, 0)
+    equal(bad.size, 200)
+    -- A client without the debuff: no cells, and one line says why.
+    local old = Mage({before = function(st)
+        local spell = st.env.C_Spell.GetSpellName
+        st.env.C_Spell.GetSpellName = function(id) if id ~= 12579 then return spell(id) end end
+    end})
+    equal(old.ddt.chillArcs, nil)
+    equal(old.settings.DDT_CHILL, nil)
+    contains(old.messages[#old.messages], "Winter's Chill balls stay off")
+    old.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(old.said("chill off: this client lacks Winter's Chill (12579)"), true)
+    -- The frozen and chilled arcs keep working.
+    assert(old.ddt.frostArcs)
+end)
+
+test("Winter's Chill balls on Forever: one HARMFUL|PLAYER slot of 12579, five balls, the game lights them", function()
+    local state = Mage({engine = true})
+    local arcs = state.ddt.chillArcs
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "holders made ahead, out of combat")
+    state.combat = true
+    local plate = AddPlate(state, "nameplate1")
+    local holder = arcs.byUnit.nameplate1
+    equal(#arcs.all, state.ddt.FROST_PREWARM, "none made in combat")
+    equal(holder.parent, plate)
+    equal(holder.point[2], plate.UnitFrame.healthBar, "on the bar FindPlateBar finds")
+    equal(holder.point[5], 36, "36 pixels above the bar: over the arcs")
+    local slot = SlotBy(holder.container, "chill")
+    equal(#holder.container.slots, 1)
+    equal(slot.filter, "HARMFUL|PLAYER", "only your own: it helps only your Cone of Cold")
+    local ids = slot.options.candidateFilters.includeSpellIDs
+    equal(ids[1], nil, "a set, not a list")
+    equal(ids[12579], true, "the debuff")
+    equal(ids[11180], nil, "not the talent")
+    -- The button: five blue balls, ball 1 white, and the bar of white balls over balls 2 to 5.
+    local button = slot.button
+    equal(holder.arcs.chill, button)
+    equal(button.width, 65)
+    equal(button.height, 13)
+    local empties, lit = 0, 0
+    for _, texture in ipairs(button.textures) do
+        if texture.layer == "BORDER" then
+            empties = empties + 1
+            contains(texture.path, "Textures\\ChillBall")
+            equal(texture.tint[3], 1, "blue")
+            assert(texture.tint[1] < 0.5, "blue, not white")
+            equal(texture.point[4], (empties - 1) * 13, "ball " .. empties)
+        end
+        if texture.layer == "ARTWORK" then
+            lit = lit + 1
+            contains(texture.path, "Textures\\ChillBall")
+            equal(texture.tint[1], 1, "white")
+            equal(texture.point[4], 0, "over ball 1")
+        end
+        equal(texture.color, nil, "art, not a color block")
+    end
+    equal(empties, 5, "five balls")
+    equal(lit, 1, "ball 1 white while the debuff shows")
+    local bar = holder.bar
+    equal(bar.kind, "StatusBar")
+    equal(bar.parent, button)
+    equal(bar.width, 52, "balls 2 to 5")
+    equal(bar.height, 13)
+    contains(bar.barTexture, "Textures\\ChillBalls", "four white balls, cropped as it fills")
+    equal(bar.barColor[1], 1, "white")
+    -- The engine's stack gate: range 1 to 5; it sets the value to the stacks.
+    local gate = button.applicationBar
+    assert(gate, "SetApplicationBar was called")
+    equal(gate[1], bar)
+    equal(gate[2].minApplications, 1)
+    equal(gate[2].maxApplications, 5)
+    equal(bar.shown, true)
+    -- The fill for n stacks ends between ball n and ball n + 1 (13-pixel cells).
+    equal(bar.point[1], "LEFT")
+    equal(bar.point[2], button)
+    for stacks = 1, 5 do
+        local edge = bar.point[4] + (stacks - 1) / 4 * bar.width
+        equal(edge, 13 * stacks, stacks .. " stacks")
+    end
+    equal(state.auraReads, 0, "no AddOn code reads an aura")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("chill on=true engine=engine holders=10 plates=1 shown=1 visible=1 anchors=[Blizzard=1]"), true)
+    -- A client without SetApplicationBar: ball 1 only, never a wrong count.
+    local older = Mage({engine = true, before = function(st)
+        local create = st.env.CreateFrame
+        st.env.CreateFrame = function(...)
+            local frame = create(...)
+            if frame.kind == "AuraContainer" then
+                local add = frame.AddAuraSlot
+                function frame:AddAuraSlot(key, filter, options)
+                    local init = options.initializeFrame
+                    options.initializeFrame = function(b)
+                        b.SetApplicationBar = false
+                        init(b)
+                    end
+                    return add(self, key, filter, options)
+                end
+            end
+            return frame
+        end
+    end})
+    AddPlate(older, "nameplate1")
+    local oldHolder = older.ddt.chillArcs.byUnit.nameplate1
+    equal(oldHolder.bar.shown, false, "no stack gate: the bar hides")
+end)
+
+test("Winter's Chill art: one ball and four in a row, whole balls with clear gaps", function()
+    -- 64 x 64 and 256 x 64, uncompressed BGRA, top-left origin.
+    for name, width in pairs({ChillBall = 64, ChillBalls = 256}) do
+        local data, w, h = ReadTGA(name)
+        equal(#data, 18 + width * 64 * 4, name)
+        equal(w, width, name)
+        equal(h, 64, name)
+        equal(data:byte(18), 0x28, name)
+    end
+    local function Pixel(data, width, x, y)
+        local at = 18 + (y * width + x) * 4
+        return data:byte(at + 1), data:byte(at + 2), data:byte(at + 3), data:byte(at + 4)
+    end
+    local data = ReadTGA("ChillBalls")
+    for ball = 0, 3 do
+        -- Clear at each cell's edges: the crop between two balls cuts nothing.
+        local _, _, _, a = Pixel(data, 256, ball * 64, 32)
+        equal(a, 0, "clear left of ball " .. ball + 1)
+        _, _, _, a = Pixel(data, 256, ball * 64 + 63, 32)
+        equal(a, 0, "clear right of ball " .. ball + 1)
+        -- Solid and light in the middle: the game tints it.
+        local b, g, r
+        b, g, r, a = Pixel(data, 256, ball * 64 + 32, 32)
+        equal(a, 255, "ball " .. ball + 1)
+        assert(r > 150 and g > 150 and b > 150, "near white, for the tint")
+    end
+    local single = ReadTGA("ChillBall")
+    local b, g, r, a = Pixel(single, 64, 32, 32)
+    local b4, g4, r4, a4 = Pixel(data, 256, 32, 32)
+    equal(a, 255)
+    equal(r .. g .. b .. a, r4 .. g4 .. b4 .. a4, "the same ball")
+end)
+
+test("Winter's Chill balls on a plain-Lua container: one ball per stack, yours only", function()
+    -- unit -> {{spellId, yours, stacks}}
+    local auras = {nameplate1 = {{12579, true, 1}}}
+    local function Read(unit, index, filter)
+        local n = 0
+        for _, aura in ipairs(auras[unit] or {}) do
+            if aura[2] or not filter:find("PLAYER", 1, true) then
+                n = n + 1
+                if n == index then
+                    return {spellId = aura[1], name = "x", icon = 1, duration = 15, expirationTime = 115,
+                        applications = aura[3]}
+                end
+            end
+        end
+    end
+    local state = Mage({auras = Read})
+    AddPlate(state, "nameplate1")
+    local holder = state.ddt.chillArcs.byUnit.nameplate1
+    equal(holder.container.kind, "Frame", "the plain-Lua container")
+    local button = holder.arcs.chill
+    -- Toolkit 2.11.0 and later gate the bar here; an older one (the copy,
+    -- 2.10.2) does not: then ball 1 only, never a wrong count.
+    local gated = type(button.display) == "table" and button.display.applications == holder.bar
+    equal(LitCells(holder, button), 1, "one stack")
+    for stacks = 2, 5 do
+        auras.nameplate1 = {{12579, true, stacks}}
+        emit(state, "UNIT_AURA", "nameplate1")
+        equal(LitCells(holder, button), gated and stacks or 1, stacks .. " stacks")
+    end
+    -- A stack count of 0 for one stack still makes ball 1 white.
+    auras.nameplate1 = {{12579, true, 0}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(button.shown, true)
+    if gated then
+        equal(holder.bar.shown, false, "the bar hides below 1")
+    end
+    equal(LitCells(holder, button), 1)
+    auras.nameplate1 = {{12579, false, 5}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(LitCells(holder, button), 0, "another Mage's Winter's Chill: none")
+    auras.nameplate1 = {{116, true, 1}, {6136, true, 1}}
+    emit(state, "UNIT_AURA", "nameplate1")
+    equal(LitCells(holder, button), 0, "Frostbolt's chill is not Winter's Chill")
+end)
+
+test("Winter's Chill balls: Size, Height, Reset live; the profile carries them; the preview shows 3 of 5", function()
+    local state = Mage({engine = true})
+    local arcs, db = state.ddt.chillArcs, state.ddt.db
+    AddPlate(state, "nameplate1")
+    state.settings.DDT_CHILL_SIZE.set(200)
+    state.settings.DDT_CHILL_OFFSET.set(40)
+    equal(arcs.byUnit.nameplate1.scale, 2)
+    equal(arcs.byUnit.nameplate1.point[5], 20, "40 pixels at scale 2")
+    state.settings.DDT_CHILL.set(false)
+    equal(arcs.byUnit.nameplate1, nil, "off: none")
+    local chill = db.wintersChill
+    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    equal(db.wintersChill, chill, "changed in place")
+    equal(db.wintersChill.enabled, true)
+    equal(db.wintersChill.size, 100)
+    equal(db.wintersChill.offset, 36)
+    equal(arcs.byUnit.nameplate1.point[5], 36)
+    -- The profile.
+    local ns = state.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Mage", parts = {DyresDebuffTracker = {wintersChill = {
+        enabled = true, size = 50, offset = 0}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(db.wintersChill.size, 50)
+    equal(arcs.byUnit.nameplate1.scale, 0.5)
+    equal(state.ddt.ProfileSettings(db).wintersChill.size, 50)
+    equal(db.frost.size, 100, "the arcs keep their own settings")
+    -- The preview: our own frame on the target's plate, 3 of 5 lit, no engine.
+    local press = state.buttons["Winter's Chill: Preview"]
+    equal(press(), "no plate")
+    contains(state.messages[#state.messages], "Winter's Chill preview: target a mob")
+    local plate = AddPlate(state, "nameplate2")
+    state.plates.target = plate
+    state.combat = true
+    equal(press(), "started")
+    local on, frame = arcs:Previewing()
+    equal(on, true)
+    equal(frame.parent, plate)
+    equal(frame.bar.value, 3, "3 of 5 lit")
+    equal(frame.bar.shown, true)
+    equal(frame.arcs.chill.applicationBar, nil, "not an engine button")
+    state.settings.DDT_CHILL_SIZE.set(150)
+    equal(frame.scale, 1.5, "live")
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(arcs:Previewing(), false, "a new target ends it")
+    -- The slash command: /ddt preview chill, and /ddt preview for a Mage.
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("preview chill")
+    equal(arcs:Previewing(), true)
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("preview")
+    equal(arcs:Previewing(), false)
+    equal(state.auraReads, 0)
+    -- Not a Mage: a message only.
+    local warlock = fixture()
+    warlock.env.SlashCmdList.DYRESDEBUFFTRACKER("preview chill")
+    contains(warlock.messages[#warlock.messages], "Mages only")
+    warlock.env.SlashCmdList.DYRESDEBUFFTRACKER("help")
+    contains(warlock.messages[#warlock.messages], "/ddt preview chill")
+end)
+
 test("Toolkit 2.9.1 or later is used; an unreadable version is let through", function()
     for _, version in ipairs({"2.9.1", "2.9.2", "2.10.0", "3.0.0"}) do
         local state = fixture({loaded = {DyresToolkit = version}})
@@ -2257,11 +2550,236 @@ test("/ddt: settings, reset, debug, reset_focus; never in combat for the panel (
     equal(state.said("/ddt opens the settings"), true)
 end)
 
-test("the TOC: optional toolkit, per-character settings, and the four files in order", function()
+-- The Mage's Winter's Chill stack chime (John, 2026-11-22, via the lead: "2,
+-- remove it, build it right in DDT"; Dyre's Buff Reminders 1.13.3 removes its own).
+local CLEU = "COMBAT_LOG_EVENT_UNFILTERED"
+
+-- Dyre's Sounds: every key it plays, in order; without lacks (a key pattern).
+local function Sounds(state, lacks)
+    state.played = {}
+    local library = {}
+    function library.RequireContract(contract) if contract <= 1 then return library end end
+    function library.Play(key)
+        if lacks and key:find(lacks) then return false end
+        state.played[#state.played + 1] = key
+        return true
+    end
+    state.env.DyresSounds = library
+    -- Your target is the mob the log lines hit (state.target; nil: no target).
+    state.target = "Creature-0-1"
+    local guid = state.env.UnitGUID
+    state.env.UnitGUID = function(unit)
+        if unit == "target" then return state.target end
+        return guid(unit)
+    end
+end
+
+-- One combat log line, as the client gives it, then the event (on
+-- state.dest, else the mob "Creature-0-1").
+local function Log(state, subevent, source, spellID, spellName, amount)
+    local dest = state.dest or "Creature-0-1"
+    state.env.C_CombatLog.GetCurrentEventInfo = function()
+        return 1, subevent, false, source, "Someone", 0, 0, dest, "Mob", 0, 0, spellID, spellName, 16,
+            "DEBUFF", amount
+    end
+    emit(state, CLEU, CLEU)
+end
+
+local function ChimeOn(state)
+    return state.ddt.chillChime.events.events[CLEU] == true
+end
+
+test("Winter's Chill chime on Classic Era: one note per stack of your own, rising, the held note at 5", function()
+    local state = Mage({before = function(st) Sounds(st) end})
+    equal(state.ddt.db.wintersChill.chime, true, "on by default, as Dyre's Buff Reminders' was")
+    equal(state.ddt.db.wintersChill.noteSet, "bassoon")
+    equal(ChimeOn(state), true, "the combat log is registered")
+    equal(state.settings.DDT_CHILL_CHIME.name, "Stack chime")
+    equal(state.settings.DDT_CHILL_CHIME.default, true)
+    equal(state.settings.DDT_CHILL_NOTESET.default, "bassoon")
+    assert(state.buttons["Winter's Chill: Test chime"], "Test chime")
+    equal(#state.messages, 0, "nothing said at login")
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    for stack = 2, 5 do
+        Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 12579, "Winter's Chill", stack)
+    end
+    equal(table.concat(state.played, ","), "bassoon1,bassoon2,bassoon3,bassoon4,bassoon8")
+    -- Nothing for a refresh, a drop, the end, another Mage, or another chill.
+    state.played = {}
+    Log(state, "SPELL_AURA_REFRESH", "Player-1", 12579, "Winter's Chill")
+    Log(state, "SPELL_AURA_REMOVED_DOSE", "Player-1", 12579, "Winter's Chill", 4)
+    Log(state, "SPELL_AURA_REMOVED", "Player-1", 12579, "Winter's Chill")
+    Log(state, "SPELL_AURA_APPLIED", "Player-2", 12579, "Winter's Chill")
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 116, "Frostbolt")
+    Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 12579, "Winter's Chill", "x")
+    equal(#state.played, 0, "no note")
+    -- Only your target (John, 2026-11-23): another mob, or no target, plays nothing.
+    state.dest = "Creature-0-2"
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 12579, "Winter's Chill", 5)
+    equal(#state.played, 0, "not your target: no note")
+    state.dest, state.target = nil, nil
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    equal(#state.played, 0, "no target: no note")
+    state.target = "Creature-0-2"
+    Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 12579, "Winter's Chill", 2)
+    equal(#state.played, 0, "the old target's chill after a target change: no note")
+    state.target = "Creature-0-1"
+    -- Classic's log may give the ID as 0: the name counts.
+    Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 0, "Winter's Chill", 3)
+    equal(state.played[1], "bassoon3", "by name")
+    -- A count over 5 is the held note.
+    Log(state, "SPELL_AURA_APPLIED_DOSE", "Player-1", 12579, "Winter's Chill", 7)
+    equal(state.played[2], "bassoon8")
+    -- Sax.
+    state.played = {}
+    state.settings.DDT_CHILL_NOTESET.set("sax")
+    equal(state.played[1], "sax8", "a new set plays its held note")
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    equal(state.played[2], "sax1")
+    -- Off: the log goes, and nothing plays.
+    state.settings.DDT_CHILL_CHIME.set(false)
+    equal(ChimeOn(state), false, "off: no combat log")
+    state.played = {}
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    equal(#state.played, 0)
+    state.settings.DDT_CHILL_CHIME.set(true)
+    equal(ChimeOn(state), true)
+    -- Test chime: stack 1 at once, then 2 to 5 by C_Timer (no OnUpdate).
+    state.played, state.timers = {}, {}
+    state.settings.DDT_CHILL_NOTESET.set("bassoon")
+    state.played = {}
+    state.buttons["Winter's Chill: Test chime"]()
+    equal(state.played[1], "bassoon1")
+    equal(#state.timers, 4)
+    for _, fn in ipairs(state.timers) do fn() end
+    equal(table.concat(state.played, ","), "bassoon1,bassoon2,bassoon3,bassoon4,bassoon8")
+    -- Reset puts the chime back on, Bassoon.
+    state.settings.DDT_CHILL_CHIME.set(false)
+    state.settings.DDT_CHILL_NOTESET.set("sax")
+    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    equal(state.ddt.db.wintersChill.chime, true)
+    equal(state.ddt.db.wintersChill.noteSet, "bassoon")
+    equal(ChimeOn(state), true, "Reset registers it again")
+    -- /ddt debug.
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("chime on=true registered=true waitsFor=none noteSet=bassoon sounds=yes"), true)
+    equal(state.auraReads, 0, "the chime reads no aura")
+end)
+
+test("Winter's Chill chime: an older Dyre's Sounds plays sax; none plays nothing; repaired; not for others", function()
+    local state = Mage({before = function(st) Sounds(st, "^bassoon") end})
+    Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    equal(state.played[1], "sax1", "no bassoon: the sax note of the same number")
+    local silent = Mage()
+    Log(silent, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
+    equal(silent.buttons["Winter's Chill: Test chime"](), false)
+    contains(silent.messages[#silent.messages], "install Dyre's Sounds")
+    local bad = Mage({saved = {wintersChill = {chime = "yes", noteSet = "tuba"}}}).ddt.db.wintersChill
+    equal(bad.chime, true)
+    equal(bad.noteSet, "bassoon")
+    local off = Mage({saved = {wintersChill = {chime = false, noteSet = "sax"}}})
+    equal(off.ddt.db.wintersChill.noteSet, "sax")
+    equal(ChimeOn(off), false, "saved off: no combat log")
+    -- Other classes: no log, no rows.
+    local warlock = fixture()
+    equal(ChimeOn(warlock), false)
+    equal(warlock.settings.DDT_CHILL_CHIME, nil)
+    warlock.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(warlock.said("chime none (Mage only)"), true)
+end)
+
+test("Winter's Chill chime on WoW: Forever: not built yet, so no combat log and no rows", function()
+    local state = Mage({restricted = true, before = function(st) Sounds(st) end})
+    equal(ChimeOn(state), false, "Forever refuses the combat log")
+    equal(state.settings.DDT_CHILL_CHIME, nil, "no chime rows")
+    assert(state.settings.DDT_CHILL, "the balls' rows stay")
+    state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+    equal(state.said("chime off: no combat log on this client"), true)
+end)
+
+test("Winter's Chill chime: waits while Dyre's Buff Reminders older than 1.13.3 still plays its own", function()
+    for _, version in ipairs({"1.13.2", "1.9.0", "x"}) do
+        local state = Mage({loaded = {DyresBuffReminders = version}, before = function(st)
+            Sounds(st)
+            st.env.DyresBuffRemindersDB = {wintersChill = {enabled = false, noteSet = "sax"}}
+        end})
+        equal(ChimeOn(state), false, version .. ": no second chime")
+        equal(state.ddt.db.chimeImported, false, version .. ": the import waits")
+        equal(state.ddt.db.wintersChill.chime, true, version .. ": nothing copied yet")
+        equal(#state.messages, 1, version .. ": one line")
+        contains(state.messages[1], "The Winter's Chill chime waits: Dyre's Buff Reminders")
+        contains(state.messages[1], "Update it to 1.13.3 or later")
+        state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
+        equal(state.said("waitsFor=" .. (version == "x" and "x" or version)), true, version)
+    end
+    -- 1.13.3 and later: the chime plays.
+    local state = Mage({loaded = {DyresBuffReminders = "1.13.3"}, before = function(st) Sounds(st) end})
+    equal(ChimeOn(state), true)
+end)
+
+test("Winter's Chill chime: Dyre's Buff Reminders' settings come over once, from 1.13.3, for a Mage", function()
+    local function Login(dbr, version, saved, extra)
+        local options = {loaded = {DyresBuffReminders = version}, saved = saved, before = function(st)
+            Sounds(st)
+            st.env.DyresBuffRemindersDB = dbr
+        end}
+        for key, value in pairs(extra or {}) do options[key] = value end
+        return Mage(options)
+    end
+    -- Off and Sax come over; one line says so.
+    local state = Login({wintersChill = {enabled = false, noteSet = "sax"}}, "1.13.3")
+    equal(state.ddt.db.chimeImported, true)
+    equal(state.ddt.db.wintersChill.chime, false, "your off stays off")
+    equal(state.ddt.db.wintersChill.noteSet, "sax")
+    equal(ChimeOn(state), false)
+    equal(#state.messages, 1)
+    equal(state.messages[1], "DDT: " .. state.ddt.CHIME_IMPORTED)
+    -- DBR's rules: only false is off; an unknown set is not copied.
+    local loose = Login({wintersChill = {enabled = "maybe", noteSet = "full"}}, "1.14.0")
+    equal(loose.ddt.db.wintersChill.chime, true)
+    equal(loose.ddt.db.wintersChill.noteSet, "bassoon")
+    -- Once: a saved flag means DBR's values are not read again.
+    local again = Login({wintersChill = {enabled = false, noteSet = "sax"}}, "1.13.3",
+        {chimeImported = true, wintersChill = {chime = true, noteSet = "bassoon"}})
+    equal(again.ddt.db.wintersChill.chime, true, "not copied twice")
+    equal(#again.messages, 0)
+    -- No table (DBR never had the chime): done, quietly.
+    local none = Login({}, "1.13.3")
+    equal(none.ddt.db.chimeImported, true)
+    equal(#none.messages, 0)
+    -- DBR not loaded: done, nothing to read.
+    local absent = Mage({before = function(st)
+        st.env.DyresBuffRemindersDB = {wintersChill = {enabled = false}}
+    end})
+    equal(absent.ddt.db.chimeImported, true)
+    equal(absent.ddt.db.wintersChill.chime, true, "not loaded: not read")
+    -- Another class: done, never read.
+    local warlock = fixture({loaded = {DyresBuffReminders = "1.13.3"}, before = function(st)
+        st.env.DyresBuffRemindersDB = {wintersChill = {enabled = false}}
+    end})
+    equal(warlock.ddt.db.chimeImported, true)
+    equal(#warlock.messages, 0)
+    -- The profile carries the chime; a profile copy counts as the import.
+    local profiled = Login({wintersChill = {enabled = false}}, "1.13.2")
+    equal(profiled.ddt.db.chimeImported, false, "waiting")
+    local ns = profiled.toolkitNS
+    ns.db.profiles["Other - Realm"] = {class = "Mage", parts = {DyresDebuffTracker = {wintersChill = {
+        chime = false, noteSet = "sax"}}}, pending = {}}
+    equal(ns.profile:CopyFrom("Other - Realm"), true)
+    equal(profiled.ddt.db.wintersChill.chime, false)
+    equal(profiled.ddt.db.wintersChill.noteSet, "sax")
+    equal(profiled.ddt.db.chimeImported, true, "a copied profile wins over a later import")
+    equal(profiled.ddt.ProfileSettings(profiled.ddt.db).wintersChill.noteSet, "sax")
+    equal(profiled.ddt.ProfileSettings({chimeImported = true}).chimeImported, true)
+end)
+
+test("the TOC: optional toolkit, per-character settings, and the five files in order", function()
     local toc = assert(io.open("DyresDebuffTracker.toc", "rb")):read("*a")
     equal(toc:find("\r", 1, true), nil, "LF only")
     equal(toc:match("## Interface: ([^\n]+)"), "16001, 11509")
-    equal(toc:match("## OptionalDeps: ([^\n]+)"), "DyresToolkit", "always loads; says once what to install")
+    equal(toc:match("## OptionalDeps: ([^\n]+)"), "DyresToolkit, DyresSounds",
+        "always loads; says once what to install; Dyre's Sounds for the Winter's Chill chime, load order only")
     equal(toc:find("## Dependencies", 1, true), nil, "never a hard dependency (family rule)")
     equal(toc:match("## Group: ([^\n]+)"), "DyresToolkit")
     equal(toc:match("## SavedVariablesPerCharacter: ([^\n]+)"), "DyresDebuffTrackerDB",

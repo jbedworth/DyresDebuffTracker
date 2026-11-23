@@ -336,7 +336,8 @@ DDT.PROFILE_CHARACTER_KEYS = {"macrosOwned"}
 function DDT.ProfileSettings(settings)
     settings = type(settings) == "table" and settings or {}
     local clean = DDT.SanitizeDB({dots = settings.dots, predict = settings.predict, control = settings.control,
-        frost = settings.frost, brand = settings.brand, macrosOwned = settings.macrosOwned, toolsImported = settings.toolsImported},
+        frost = settings.frost, brand = settings.brand, wintersChill = settings.wintersChill, macrosOwned = settings.macrosOwned, toolsImported = settings.toolsImported,
+        chimeImported = settings.chimeImported},
         DDT.classData)
     local live = type(DDT.db) == "table" and type(DDT.db.dots) == "table" and DDT.db.dots or {}
     for _, slot in ipairs(DDT.classData and DDT.classData.dots or {}) do
@@ -370,6 +371,7 @@ function DDT.ApplyProfile()
     DDT.ApplySmartCurse()
     -- A copied profile wins over a later first-login copy from a Tools AddOn.
     DDT.db.toolsImported = true
+    DDT.db.chimeImported = true
     -- Scale and look, then Refresh: the owner claim (control.enabled), the
     -- clicks, the plate timers, and the macros (each out of combat).
     local control = DDT.controlTracker
@@ -380,6 +382,7 @@ function DDT.ApplyProfile()
     end
     DDT.RefreshFrost()
     DDT.RefreshBrand()
+    DDT.RefreshChill()
 end
 
 -- Joins the profile, where the Toolkit has one (2.10.0); else nothing changes.
@@ -402,6 +405,8 @@ function DDT.Start()
     DDT.profileJoined = DDT.RegisterProfile()
     -- The class Tools AddOn's settings, once, before the engines read them.
     DDT.ImportFromTools(DDT.db, DDT.class, DDT.classData)
+    -- Dyre's Buff Reminders' Winter's Chill chime settings, once (Mage).
+    DDT.ImportChillChime(DDT.db, DDT.class)
     -- WTF's smart curse key, out of combat (now, else when combat ends).
     if DDT.class == "WARLOCK" and type(DDT.toolkit.OutOfCombat) == "function" then
         DDT.toolkit.OutOfCombat(DDT.CURSE_BINDING, DDT.MoveCurseBinding)
@@ -416,6 +421,16 @@ function DDT.Start()
             DDT.frostMissing = tostring(missing)
             DDT.Report("The frozen and chilled arcs stay off: this client lacks " .. tostring(missing) .. ".")
         end
+        -- The Winter's Chill balls, the same way.
+        local cells, lacks = DDT.CreateChillArcs(DDT.toolkit, function() return DDT.db.wintersChill end)
+        if cells then
+            DDT.chillArcs = cells
+        else
+            DDT.chillMissing = tostring(lacks)
+            DDT.Report("The Winter's Chill balls stay off: this client lacks " .. tostring(lacks) .. ".")
+        end
+        -- The Winter's Chill stack chime (Chime.lua; Classic Era for now).
+        DDT.StartChillChime()
     end
     -- The Warlock's Demonic Brand pentagram, the same way. Only where the client
     -- knows the debuff (Forever); on Classic Era, quietly none.
@@ -521,6 +536,43 @@ function DDT.RefreshBrand()
     if DDT.brandArcs then
         DDT.brandArcs:Refresh()
     end
+end
+
+function DDT.RefreshChill()
+    if DDT.chillArcs then
+        DDT.chillArcs:Refresh()
+    end
+    DDT.RefreshChillChime()
+end
+
+-- The Winter's Chill preview on your target's nameplate (the "Preview"
+-- button and /ddt preview chill): three of five balls white, no debuff needed.
+DDT.CHILL_PREVIEW_TEXT = {
+    started = "Winter's Chill preview: on your target's nameplate. Change Size and Height to see them. Press "
+        .. "Preview again, or change target, to end it.",
+    stopped = "Winter's Chill preview: off.",
+    ["no plate"] = "Winter's Chill preview: target a mob with its nameplate showing first.",
+}
+
+function DDT.PreviewChill()
+    if not DDT.chillArcs then
+        DDT.Report(DDT.class == "MAGE"
+            and "Winter's Chill preview: this client lacks " .. tostring(DDT.chillMissing) .. "."
+            or "Winter's Chill preview: Mages only.")
+        return nil
+    end
+    local result = DDT.chillArcs:TogglePreview()
+    DDT.Report(DDT.CHILL_PREVIEW_TEXT[result])
+    return result
+end
+
+-- The Winter's Chill rows back to their defaults, in place.
+function DDT.ResetChill()
+    local defaults = DDT.SanitizeDB({}, DDT.classData).wintersChill
+    for key, value in pairs(defaults) do
+        DDT.db.wintersChill[key] = value
+    end
+    DDT.RefreshChill()
 end
 
 -- The Demonic Brand preview on your target's nameplate, on or off (the
@@ -633,6 +685,17 @@ function DDT.DebugLines()
     else
         lines[#lines + 1] = "frost none (Mage only)"
     end
+    -- The Mage's Winter's Chill balls (Frost.lua).
+    if DDT.chillArcs then
+        for _, line in ipairs(DDT.chillArcs:DebugLines()) do
+            lines[#lines + 1] = "chill " .. line
+        end
+    elseif DDT.class == "MAGE" then
+        lines[#lines + 1] = "chill off: this client lacks " .. tostring(DDT.chillMissing)
+    else
+        lines[#lines + 1] = "chill none (Mage only)"
+    end
+    lines[#lines + 1] = DDT.ChillChimeDebug()
     -- The Warlock's Demonic Brand pentagram (Frost.lua).
     if DDT.brandArcs then
         for _, line in ipairs(DDT.brandArcs:DebugLines()) do

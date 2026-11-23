@@ -49,6 +49,17 @@ headless Chrome as the arcs are. The glow is a soft red halo computed by the
 script; the game draws it behind the star with additive blending and pulses
 it. Our own art; nothing is copied from Blizzard or another AddOn.
 
+## The Mage's Winter's Chill frost balls
+
+`Textures/ChillBall.tga` (64 x 64) and `Textures/ChillBalls.tga` (256 x 64,
+four balls in a row), the same format, computed by `python
+scripts/make_artwork.py --chill` (John, 2026-11-22: "blue frostballs that
+turn white as the stack builds"). A frosted ball, near white with a cool
+shade, lit from the top left, with a bright highlight and a frosty rim; 49
+pixels across in each 64-pixel cell, so the cells' edges are clear. The game
+tints it blue while empty and white while lit. ChillBalls is the stack bar's
+fill, which the game crops as it fills. Our own art.
+
 ## Screenshots
 
 `screenshots/*-raw.webp` are John's raw Classic Era screenshots (2026-10-30,

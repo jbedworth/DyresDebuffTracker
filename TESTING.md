@@ -59,6 +59,73 @@ LibClassicDurations' classAbilities.lua (Era) for the debuff IDs.
 - [ ] "Arc height", "Arc size", and the switch apply at once. A Warlock or
       other class has no "Frozen and chilled" rows.
 
+## In-client checks: Winter's Chill frost balls (Mage, both clients)
+
+First: after you install, **restart the game client** (quit and start it).
+`/reload` does not load new TGA files (ChillBall.tga, ChillBalls.tga).
+The IDs come from web sources (Frost.lua names them; none checked in the
+client yet): Wowhead `forever/spell=11180` (the talent; its proc triggers
+12579), `forever/spell=12579` and `classic/spell=12579` (the debuff, 15 s,
+Magic), and warcraft.wiki.gg "Winter's Chill" (5 stacks).
+
+- [ ] With the talent, put Winter's Chill on a mob (Frostbolt). Out of
+      combat: `/dump C_UnitAuras.GetAuraDataBySpellName("target", "Winter's
+      Chill", "HARMFUL")` (on Classic Era, if missing: `/dump
+      AuraUtil.FindAuraByName("Winter's Chill", "target", "HARMFUL")`). Note
+      `spellId` (expected 12579), `sourceUnit` (expected "player"; if not,
+      the `HARMFUL|PLAYER` slot draws nothing: change the filter to
+      `HARMFUL`), and `applications` at 1 stack (0 or 1; both show one white ball)
+      and at 2 or more.
+- [ ] `/ddt debug`: the `chill` line shows `on=true`, `plates` at least 1,
+      and in `anchors` your nameplate AddOn (or `Blizzard`).
+- [ ] Five blue balls show; ball 1 is white at one stack. Out of combat
+      and in combat: each new stack turns one more ball white, up to 5;
+      the white balls are round and whole (not squeezed or cut in half: the
+      game crops the bar's fill texture, not stretches it). The balls go
+      when the debuff ends (15 s). No Lua error. The frame rate does not
+      drop. The balls sit above the frozen and chilled
+      arcs and clear of the mob's name.
+- [ ] Cone of Cold on Forever uses the stacks: the balls go with them.
+- [ ] Another Mage's Winter's Chill shows no balls.
+- [ ] A Mage without the talent: nothing shows; the rows are still there.
+- [ ] Show, Size (shows "100%"), and Height above nameplate (shows "36")
+      apply at once. Reset Winter's Chill puts back on, 100%, 36. The heading
+      "Winter's Chill" follows "Frozen and chilled". Other classes have no
+      such rows.
+- [ ] Preview: target a mob with its nameplate showing and press "Preview"
+      (or `/ddt preview chill`). Three of five balls are white. Size and
+      Height change it at once. Press again, or change target: it goes.
+- [ ] Classic Era with Dyre's Toolkit older than 2.11.0: only the first ball
+      lights, at any stack count.
+
+## In-client checks: Winter's Chill stack chime (Mage, Classic Era)
+
+Needs Dyre's Sounds. The design is Dyre's Buff Reminders 1.9.0's chime (its
+Procs.lua through 1.13.2), moved here.
+
+- [ ] With Dyre's Buff Reminders 1.13.3 or later (or not installed): put
+      Winter's Chill on a mob. Each new stack plays one note: Bassoon 1, 2,
+      3, 4, then the held high note at 5. A refresh at 5 plays nothing. The
+      debuff ending plays nothing. No Lua error.
+- [ ] `/ddt debug`: the `chime` line shows `on=true registered=true
+      waitsFor=none sounds=yes`, and `last=` the last stack heard.
+- [ ] Note set: Sax plays the sax notes; choosing a set plays its held note.
+      Test chime plays 1 to 5, one after another.
+- [ ] Stack chime off: no notes, and `registered=false`.
+- [ ] Another Mage's Winter's Chill on your target: no note.
+- [ ] Your Winter's Chill on a mob that is not your target (target another
+      mob, then Cone of Cold or Frostbolt hits both): only the target's
+      stacks play.
+- [ ] With Dyre's Buff Reminders 1.13.2 or older loaded: one chat line at
+      login ("The Winter's Chill chime waits"), only that AddOn's chime
+      plays, and `/ddt debug` shows `waitsFor=1.13.2`.
+- [ ] Import: on a Mage that had "Winter's Chill Chimes" off or set to Sax
+      in Dyre's Buff Reminders, log in with Dyre's Buff Reminders 1.13.3:
+      one chat line ("Copied your Winter's Chill chime settings"), and the
+      same values here. Log in again: no second line.
+- [ ] WoW: Forever: no chime rows, and `/ddt debug` shows `chime off: no
+      combat log on this client`.
+
 ## In-client checks: Demonic Brand pentagram (Warlock, Forever)
 
 First: after you install, **restart the game client** (quit and start it).

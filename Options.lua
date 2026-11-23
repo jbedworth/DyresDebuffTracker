@@ -222,6 +222,7 @@ end
 local function Dots() return DDT.db.dots end
 local function Frost() return DDT.db.frost end
 local function Brand() return DDT.db.brand end
+local function Chill() return DDT.db.wintersChill end
 local function Predict() return DDT.db.predict end
 local function Control() return DDT.db.control end
 
@@ -243,6 +244,55 @@ local function FrostSection(category, layout)
             .. ".", DDT.RefreshFrost), master, On)
     Nest(Slider(category, "DDT_FROST_SIZE", "Arc size", Frost, "size", size.default, size.min, size.max,
         "The arcs' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshFrost), master, On)
+end
+
+-- The Mage's Winter's Chill balls (Frost.lua; John, 2026-11-22: "add a
+-- similar halo above the nameplate ... with up to 5 cells (one per charge)").
+-- This AddOn's own, as the arcs: never greyed. Every change applies at once.
+local function ChillSection(category, layout)
+    if DDT.class ~= "MAGE" or not DDT.chillArcs then
+        return
+    end
+    Heading(layout, "Winter's Chill")
+    local master = Flag(category, "DDT_CHILL", "Show", Chill, "enabled", true,
+        "Five blue frost balls above an enemy's nameplate while your Winter's Chill is on it: one more turns white with each stack, up to "
+            .. DDT.CHILL_MOST .. ", as combo points. Your Frost spells add the stacks.", DDT.RefreshChill)
+    local function On() return DDT.db.wintersChill.enabled end
+    local offset, size = DDT.CHILL_OFFSET, DDT.CHILL_SIZE
+    Nest(Slider(category, "DDT_CHILL_SIZE", "Size", Chill, "size", size.default, size.min, size.max,
+        "The balls' size, in percent: " .. size.min .. " to " .. size.max .. ".", DDT.RefreshChill,
+        function(value) return string.format("%d%%", value) end), master, On)
+    Nest(Slider(category, "DDT_CHILL_OFFSET", "Height above nameplate", Chill, "offset", offset.default, offset.min,
+        offset.max, "How far above the nameplate's health bar the balls sit, in pixels: " .. offset.min .. " to "
+            .. offset.max .. ". The default sits above the frozen and chilled arcs.", DDT.RefreshChill), master, On)
+    Button(layout, "Winter's Chill", "Preview", DDT.PreviewChill,
+        "Shows the balls on your target's nameplate with no Winter's Chill on it (" .. DDT.CHILL_PREVIEW .. " of "
+            .. DDT.CHILL_MOST .. " white), so you can set Size and Height. Press again, or change target, to end it.")
+    -- The stack chime (Chime.lua): where the combat log runs (Classic Era).
+    if DDT.ChillChimeUsable() then
+        Flag(category, "DDT_CHILL_CHIME", "Stack chime", Chill, "chime", true,
+            "A note as each stack of your Winter's Chill goes on a mob: rising from 1 to " .. (DDT.CHILL_MOST - 1)
+                .. ", and a held high note at " .. DDT.CHILL_MOST .. ". A stack that drops, or the debuff ending, "
+                .. "plays nothing. Only your target's stacks chime; another Mage's Winter's Chill does not. Needs Dyre's Sounds.",
+            DDT.RefreshChillChime)
+        local function ChimeOn() return DDT.db.wintersChill.chime end
+        local sets = {}
+        for _, key in ipairs(DDT.CHILL_CHIME_ORDER) do
+            sets[#sets + 1] = {key, DDT.CHILL_CHIME_SETS[key].label}
+        end
+        local noteSet = Choice(category, "DDT_CHILL_NOTESET", "Note set", Chill, "noteSet", DDT.CHILL_CHIME_DEFAULT,
+            sets, "The chime's instrument, from Dyre's Sounds.", function()
+                DDT.PlayChillNote(DDT.ChillChimeNote(DDT.CHILL_MOST, DDT.db.wintersChill.noteSet), "Winter's Chill")
+            end)
+        if noteSet and type(noteSet.AddModifyPredicate) == "function" then
+            noteSet:AddModifyPredicate(ChimeOn)
+        end
+        Button(layout, "Winter's Chill", "Test chime", DDT.TestChillChime,
+            "Plays the chime for stacks 1 to " .. DDT.CHILL_MOST .. ", one after another.")
+    end
+    Button(layout, "Winter's Chill", "Reset Winter's Chill", DDT.ResetChill,
+        "Show, Size, Height, and the chime back to their defaults: on, " .. size.default .. "%, " .. offset.default
+            .. " pixels, chime on, Bassoon.")
 end
 
 -- The Warlock's Demonic Brand pentagram (Frost.lua; John, via the lead,
@@ -424,6 +474,7 @@ local function DotsPage(parent)
     DDT.dotsCategory = category
     if not Status(layout, "dots", NO_DOTS) then
         FrostSection(category, layout)
+        ChillSection(category, layout)
         BrandSection(category, layout)
         return
     end
@@ -690,6 +741,7 @@ local function DotsPage(parent)
         end
     end
     FrostSection(category, layout)
+    ChillSection(category, layout)
     BrandSection(category, layout)
 end
 

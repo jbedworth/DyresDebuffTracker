@@ -1,5 +1,34 @@
 # Changelog
 
+## 1.6.0
+
+### Features
+
+- **Winter's Chill** (Mages, both clients): five blue frost balls above an
+  enemy's nameplate while your Winter's Chill is on it. One more ball turns
+  white with each stack, up to 5, as combo points. The game lights the
+  balls, so they work in combat. Only your own Winter's Chill shows. On by default. "Winter's Chill" on the DoTs page:
+  **Show**, **Size** (50% to 200%), **Height above nameplate** (0 to 60
+  pixels; the default 36 sits above the frozen and chilled arcs),
+  **Preview** (or `/ddt preview chill`: three of five balls white on your
+  target's nameplate, to set the size and height), and **Reset Winter's
+  Chill**. On Classic Era the balls count stacks with Dyre's Toolkit 2.11.0
+  or later; with an older Toolkit only the first ball turns white. After
+  you install this version, restart the game (not only /reload): the game
+  loads new image files only at start.
+- **Winter's Chill stack chime** (Mages, Classic Era): a note as each stack
+  of your Winter's Chill goes on a mob, rising from 1 to 4, and a held high
+  note at 5, only on your target, as the combo point chimes. A stack that
+  drops, the debuff ending, or your chill on another mob plays nothing.
+  Another Mage's Winter's Chill does not chime. On by default. In the
+  "Winter's Chill" section: **Stack chime**, **Note set** (Bassoon or Sax),
+  and **Test chime**. It needs Dyre's Sounds. This chime moves here from
+  Dyre's Buff Reminders, which removes its own in 1.13.3. Your Dyre's Buff
+  Reminders chime settings (on or off, and the note set) are copied here
+  once, and a chat line says so. While an older Dyre's Buff Reminders is
+  loaded, this chime waits, so you never hear two, and one chat line says
+  to update it. WoW: Forever has no chime yet.
+
 ## 1.5.0
 
 ### Features

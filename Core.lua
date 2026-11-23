@@ -438,9 +438,20 @@ function DDT.SanitizeDB(db, classData)
     db.brand = {enabled = Bool(brand.enabled, true),
         offset = Whole(brand.offset, DDT.BRAND_OFFSET.min, DDT.BRAND_OFFSET.max, DDT.BRAND_OFFSET.default),
         size = Whole(brand.size, DDT.BRAND_SIZE.min, DDT.BRAND_SIZE.max, DDT.BRAND_SIZE.default)}
+    -- The Mage's Winter's Chill balls (Frost.lua); kept for every class, used by Mages.
+    local chill = type(db.wintersChill) == "table" and db.wintersChill or {}
+    db.wintersChill = {enabled = Bool(chill.enabled, true),
+        offset = Whole(chill.offset, DDT.CHILL_OFFSET.min, DDT.CHILL_OFFSET.max, DDT.CHILL_OFFSET.default),
+        size = Whole(chill.size, DDT.CHILL_SIZE.min, DDT.CHILL_SIZE.max, DDT.CHILL_SIZE.default),
+        -- The stack chime (Chime.lua): on by default, as Dyre's Buff Reminders' was.
+        chime = Bool(chill.chime, true),
+        noteSet = DDT.ChillChimeSet(chill.noteSet) or DDT.CHILL_CHIME_DEFAULT}
     -- The class Tools AddOn's settings were copied (or there was nothing to
     -- copy): once per character, and a profile copy counts (DDT.ImportFromTools).
     db.toolsImported = db.toolsImported == true
+    -- Dyre's Buff Reminders' Winter's Chill chime settings were copied (or
+    -- there was nothing to copy): the same rules (DDT.ImportChillChime).
+    db.chimeImported = db.chimeImported == true
     -- The character macros this AddOn keeps (the toolkit's keeper), by name.
     local owned = type(db.macrosOwned) == "table" and db.macrosOwned or {}
     db.macrosOwned = {}
@@ -629,6 +640,7 @@ local function AddOnLoaded(addon)
     local loaded = type(C_AddOns) == "table" and C_AddOns.IsAddOnLoaded or rawget(_G, "IsAddOnLoaded")
     return type(loaded) == "function" and loaded(addon) == true
 end
+DDT.AddOnVersion, DDT.AddOnLoaded = AddOnVersion, AddOnLoaded
 
 -- Once per character, before the engines are made. While the class's Tools
 -- AddOn is loaded at a version that still claims (older than its handover,
@@ -662,6 +674,42 @@ function DDT.ImportFromTools(db, class, classData)
         DDT.Report(string.format(DDT.TOOLS_IMPORTED, source.what, source.title))
     end
     return copied
+end
+
+DDT.CHIME_IMPORTED = "Copied your Winter's Chill chime settings from Dyre's Buff Reminders. Change them here, "
+    .. "under Dyre's Debuff Tracker, Winter's Chill."
+
+-- Dyre's Buff Reminders' Winter's Chill chime settings (DBR 1.9.0 to 1.13.2;
+-- per character, DyresBuffRemindersDB.wintersChill = {enabled, noteSet},
+-- kept as saved by DBR 1.13.3 for one release), once per character, for a
+-- Mage. The ImportFromTools rules: it waits while DBR is loaded at a version
+-- older than 1.13.3 (or unreadable), as that DBR still plays its chime and
+-- its values may still change; it is marked done once it ran, or when DBR
+-- is not loaded. Read only, through DBR's own rules: only false turns the
+-- chime off; a note set other than bassoon or sax is not copied. One chat
+-- line when something came. Returns whether it did.
+function DDT.ImportChillChime(db, class)
+    if db.chimeImported then
+        return false
+    end
+    if class ~= "MAGE" or not AddOnLoaded(DDT.DBR_ADDON) then
+        db.chimeImported = true
+        return false
+    end
+    local version = AddOnVersion(DDT.DBR_ADDON)
+    if not version or not DDT.VersionAtLeast(version, DDT.DBR_HANDOVER) then
+        return false
+    end
+    db.chimeImported = true
+    local saved = rawget(_G, "DyresBuffRemindersDB")
+    local chill = type(saved) == "table" and saved.wintersChill
+    if type(chill) ~= "table" then
+        return false
+    end
+    db.wintersChill.chime = chill.enabled ~= false
+    db.wintersChill.noteSet = DDT.ChillChimeSet(chill.noteSet) or db.wintersChill.noteSet
+    DDT.Report(DDT.CHIME_IMPORTED)
+    return true
 end
 
 -- The smart curse's key, from WTF's binding to DDT's (lead, from John): while
@@ -705,7 +753,7 @@ end
 
 local HELP = "/ddt opens the settings; /ddt reset puts the frames back; /ddt reset_focus checks the focus again; "
     .. "/ddt debug shows what the trackers see; /ddt preview brand shows the Demonic Brand pentagram on your "
-    .. "target (Warlocks, WoW: Forever)."
+    .. "target (Warlocks, WoW: Forever); /ddt preview chill shows the Winter's Chill balls on your target (Mages)."
 
 local function HandleCommand(message)
     local command, argument = (message or ""):lower():match("^%s*(%S*)%s*(%S*)")
@@ -723,6 +771,8 @@ local function HandleCommand(message)
         for _, line in ipairs(DDT.DebugLines()) do
             DDT.Report(line)
         end
+    elseif command == "preview" and (argument == "chill" or (argument == "" and DDT.class == "MAGE")) then
+        DDT.PreviewChill()
     elseif command == "preview" and (argument == "" or argument == "brand") then
         DDT.PreviewBrand()
     else
