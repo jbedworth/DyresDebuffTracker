@@ -576,13 +576,16 @@ local function KnowsSpell(id)
     return false, any
 end
 
--- The spell ID this client gives the talent's name, else nil.
-local function TalentIDByName()
+-- The spell ID this client gives the talent's name, else nil. talentID: the
+-- talent's first ID (its name); debuffID: the debuff of the same name, never
+-- counted as the talent.
+local function TalentIDByName(talentID, debuffID)
+    talentID, debuffID = talentID or DDT.CHILL_TALENTS[1], debuffID or DDT.CHILL_SPELL
     local name
     if type(C_Spell) == "table" and type(C_Spell.GetSpellName) == "function" then
-        name = C_Spell.GetSpellName(DDT.CHILL_TALENTS[1])
+        name = C_Spell.GetSpellName(talentID)
     elseif type(GetSpellInfo) == "function" then
-        name = GetSpellInfo(DDT.CHILL_TALENTS[1])
+        name = GetSpellInfo(talentID)
     end
     if type(name) ~= "string" or name == "" or DDT.toolkit and DDT.toolkit.IsSecret(name) then
         return nil
@@ -595,7 +598,7 @@ local function TalentIDByName()
         id = select(7, GetSpellInfo(name))
     end
     -- The debuff has the same name: never count it as the talent.
-    if type(id) ~= "number" or id == DDT.CHILL_SPELL then
+    if type(id) ~= "number" or id == debuffID then
         return nil
     end
     return id
@@ -617,6 +620,37 @@ function DDT.ReadChillTalent()
         return true
     end
     return false
+end
+
+-- The Demonic Brand talent (John, 2026-11-27: "I expect to see every setting
+-- available for warlocks, but only enabled if I have it"): 1293695, the
+-- hidden talent passive (Wowhead, warcraftmaps.com; not checked in the
+-- client), else the talent's name to an ID that is not the debuff 1293696.
+-- Only the settings rows use it (the pentagram needs your Brand on a mob,
+-- which only the talent puts there). Read as the page draws. True, false,
+-- or nil (no API).
+DDT.BRAND_TALENTS = {1293695}
+
+function DDT.ReadBrandTalent()
+    local any = false
+    for _, id in ipairs(DDT.BRAND_TALENTS) do
+        local known, api = KnowsSpell(id)
+        if known then return true end
+        any = any or api
+    end
+    if not any then
+        return nil
+    end
+    local id = TalentIDByName(DDT.BRAND_SPELL, DDT.BRAND_SPELL)
+    if id and KnowsSpell(id) then
+        return true
+    end
+    return false
+end
+
+-- Known, or not readable (a broken check never greys it for everyone).
+function DDT.BrandTalentKnown()
+    return DDT.ReadBrandTalent() ~= false
 end
 
 -- Whether the arc and the chime may work: known, or not readable (a broken

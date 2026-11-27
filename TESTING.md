@@ -8,7 +8,7 @@ checks in the client. Mock tests do not prove in-client behavior.
 - `tests/run.lua` (Lua 5.1 mocks), run from this folder:
   `../WarlockToolsForever/.tools/luarocks-3.13.0-win32/win32/lua5.1/bin/lua5.1.exe tests/run.lua`.
   It loads Dyre's Toolkit's real files from `../DyresToolkit`, else (CI, or
-  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.10.2 copy in `tests/toolkit`.
+  `DDT_TOOLKIT_COPY=1`) the Toolkit v2.17.0 copy in `tests/toolkit`.
 - The release tooling's Python tests: `python -m unittest discover -s tests
   -p "test_*.py"`, and `python scripts/build_release.py --output dist`.
 - Dyre's Toolkit's own suite (`../DyresToolkit/tests/run.lua`) holds the
@@ -231,6 +231,60 @@ rank), warcraft.wiki.gg "Demonic Brand", and warcraftmaps.com
       so, nothing shows. In combat: it works, with no Lua error and no
       "blocked action" message. Turn "Show" off: the preview stays (it is
       for tuning).
+
+## In-client checks: settings sections in WTF and MTF (Toolkit 2.17.0)
+
+John, 2026-11-26: a class AddOn "should surface every setting in the
+wrapped addon's settings, and just pass-through the setting to the wrapped
+addon". DDT registers "tracker", "dots", and "control" at ADDON_LOADED;
+WTF draws all three, MTF draws "control" (its Polymorph page).
+
+- [ ] Warlock, WTF 1.13.0 and Toolkit 2.17.0: WTF's DoT Tracker, DoTs, and
+      Control pages show DDT's rows (no "Open settings" button). No Lua
+      error at login ("Setting variable ... was previously registered").
+- [ ] Change Theme on WTF's DoT Tracker page; open DDT's DoTs page: it shows
+      the new theme, and the tracker changes. Change it back on DDT's page;
+      WTF's page shows it.
+- [ ] WTF's DoTs page: "Show DoT dots on nameplates" and the rows under it
+      are greyed while DDT's DoT tracker is off (Enable on WTF's DoT Tracker
+      page).
+- [ ] WTF's Control page (Toolkit with SETTINGS_SECTIONS_VERSION 2): Bar
+      size moves the control bar; DDT's Crowd control page shows the same
+      size. With version 1 the size rows are only on DDT's page.
+- [ ] Mage, MTF and Toolkit 2.17.0: MTF's Polymorph page shows DDT's
+      Polymorph bar rows and "! Polymorph" announcement; a change there shows
+      on DDT's Crowd control page.
+- [ ] With Toolkit 2.16.x: WTF's and MTF's pages show the "Open settings"
+      button, as before.
+- [ ] DDT's own pages are "DoT Tracker", "DoTs", "Crowd Control", and (Mage,
+      or Warlock on Forever) "Debuff Cues". WTF's top page shows "DoT
+      Tracker" and "Crowd Control"; MTF's shows "Crowd Control". WTF's and
+      MTF's "Procs" page shows "Debuff Cues" (Demonic Brand; frozen and
+      chilled arcs and Winter's Chill). Without the talent, every Winter's
+      Chill (Mage) or Demonic Brand (Warlock) row is greyed, buttons too, and
+      the tooltip ends "Greyed out: you have not learned ... yet."; with it,
+      active. No banner.
+- [ ] Warlock with Demonic Brand: `/dump IsPlayerSpell(1293695)` gives true
+      (the talent ID is from the web). If false, report it: the rows then
+      rely on the name check. The
+      sub-pages do not show them again.
+- [ ] Turn "Enable DoT tracker" off: on DDT's DoTs page and WTF's
+      sub-pages every tracker row is greyed, also the grandchildren (the
+      smart curse letter, Health text, the nameplate dot rows), and the
+      Reset buttons. Damage to come keeps its own switch.
+- [ ] Turn "Enable crowd control" off (or "Polymorph bar" / "Control bar"
+      on MTF's or WTF's top page): every crowd-control row greys (macros,
+      markers, messages, Say, timers, sizes, Reset size); the "!" macros
+      leave your macro list and action bars ("! Curse" stays); casting
+      Polymorph or Fear says nothing to the group. Turn it on: the macros
+      are back in the macro list (put them on your bars again). Turn "Keep
+      the control macros" off: the markers grey.
+- [ ] Warlock: "Keep the "! Curse" macro" (DoTs page, Curse slot) off
+      deletes "! Curse"; on writes it back. Crowd control off leaves it.
+- [ ] Live: each greying above happens as you click the switch, with the
+      page open (grandchildren, sizes, Reset buttons, and on WTF's and
+      MTF's sub-pages after the switch on the top page; open the sub-page
+      after the click).
 
 ## In-client checks: per-panel settings (Toolkit 2.13.0)
 

@@ -146,7 +146,9 @@ function DDT.ApplyCurseMacro()
     end
     DDT.toolkit.OutOfCombat(keeper, function()
         local body = tracker:SmartCurseBody()
-        if DDT.db.control.macros == false then
+        -- Its own switch, apart from crowd control (John, 2026-11-27: "Keep
+        -- ! Curse separate").
+        if DDT.db.dots.curseMacro == false then
             if keeper.written[DDT.CURSE_MACRO] then
                 keeper:Delete(DDT.CURSE_MACRO)
             end
@@ -276,7 +278,7 @@ local function CreateControl()
         sizes[spec.key] = {min = spec.min, max = spec.max, step = spec.step, default = spec.default,
             label = spec.label, percent = spec.percent}
     end
-    local widget = toolkit.CreateWidget({addon = addonName, key = "control", title = "Crowd control",
+    local widget = toolkit.CreateWidget({addon = addonName, key = "control", title = "Crowd Control",
         store = db.control, width = CONTROL_WIDTH, height = rows * CONTROL_ROW_STEP - CONTROL_GAP,
         name = DDT.NAMES.control, point = CONTROL_POINT, sizes = sizes,
         sizeOrder = {"scale", "width", "barHeight", "textScale"},
@@ -612,8 +614,6 @@ function DDT.RefreshControl()
     if DDT.controlTracker then
         DDT.controlTracker:Refresh()
     end
-    -- "! Curse" follows the control macros switch.
-    DDT.ApplyCurseMacro()
 end
 
 -- A DoT's color: the tracker's bars (rebuilt) and the nameplate dots.

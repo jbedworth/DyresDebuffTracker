@@ -161,7 +161,8 @@ character knows, at its best rank; none for a spell it does not know.
   hidden ticks (`predictor.hidden`); Toolkit 2.5 gives none there, and the
   page leaves out its settings. A class Tools AddOn (10) still wins over
   this AddOn (5).
-- Options.lua: "Debuff Tracker" under Dyre's AddOns, with two pages, DoTs
+- Options.lua: "Debuff Tracker" under Dyre's AddOns, with one page per section (DoT Tracker, DoTs,
+  Crowd Control, Debuff Cues; see "Settings sections"); before 2026-11-27 two pages, DoTs
   and Crowd control, each with its own Enable. A page whose kind another
   AddOn has says which one and greys its settings (`DDT.KindStatus`,
   `DDT.Owns`); a class with no table or no data for the kind gets one note.
@@ -254,6 +255,113 @@ character knows, at its best rank; none for a spell it does not know.
   newer Toolkit stay. Sliders always show a number (`DDT.WholeLabel`):
   without a formatter the client shows no value (John's Outline width read
   0 while 3 was saved, 2026-11-21).
+- Settings sections (Dyre's Toolkit 2.17.0; John, 2026-11-27, via the
+  Toolkit lead: "Fix the settings delegation in MTF and WTF", his approved
+  plan of 2026-11-26: class AddOns "should surface every setting in the
+  wrapped addon's settings, and just pass-through the setting to the
+  wrapped addon"; the same settings stay on this AddOn's page). Options.lua:
+  three builders, keys are the contract with the hosts: "tracker"
+  (`TrackerSection`: Status, Enable, Theme, sizes or Panels, Hide empty,
+  the Curse slot, Damage to come; WTF's "DoT Tracker"), "dots"
+  (`DotsSection`: nameplate DoT dots, Each DoT, and this AddOn's own
+  nameplate marks, the Mage's frozen, chilled, and Winter's Chill arcs and
+  the Warlock's Demonic Brand; WTF's "DoTs"), "control" (`ControlSection`:
+  Enable, macros, plate timers, markers, announcements, the bar's size;
+  WTF's "Control", MTF's "Polymorph"). MTF draws only "control", so a
+  Mage's arcs are only on this AddOn's DoTs page. Registered at
+  ADDON_LOADED (`DDT.RegisterSettingsSections`, only when
+  `DyresToolkit.SETTINGS_SECTIONS_VERSION` is 1 or later). A host builds at its
+  PLAYER_LOGIN, maybe before ours, so the build calls `DDT.EnsureStarted()`
+  (Core.lua: the toolkit check, SanitizeDB, and the engines, once;
+  PLAYER_LOGIN then builds our page and registers). Every variable goes
+  through the running context (`building`, `Var`, `Register`): prefixed on
+  a host page, as named on our page (`OwnSettingsContext`, else the same
+  shape). The bar's size rows: `AddWidgetSettings`, which names its
+  variables itself; on a host page only with SETTINGS_SECTIONS_VERSION 2,
+  with `opts.variable = ctx.variable` (the sliders and Reset's
+  NotifyUpdate; Toolkit lead, 2026-11-27); with version 1 they stay on our
+  own page only. No other Toolkit helper that names its own variables is
+  used in a section (no AddProcSettings). A
+  host page with "dots" but not "tracker" has no Enable row to nest under:
+  `Nest` with no parent greys the row while the tracker is off. A builder
+  returns false (the host shows its link) with no class table, a class
+  without the kind (`DDT.KindStatus` "none"), or a context for another
+  class. Version 3 (John, 2026-11-27, after his in-game test: "when the
+  top-level is off, the settings that are controlling a disabled feature
+  should be disabled too. Also, the top-level disable for each section
+  should be on the top-level MTF panel"): `ctx.part` (`Part`, read only
+  with SETTINGS_SECTIONS_VERSION 3, else "all"): "master" draws only the
+  section's top switch (tracker: "Enable DoT tracker" `DDT_DOTS`; control:
+  "Enable crowd control" `DDT_CONTROL`; dots: none, returns false, since
+  its rows hang on the tracker's switch and each mark has its own Show),
+  "rest" all but that switch, "all" both. On a host's top page the switch
+  names its feature (Toolkit lead, 2026-11-27: several AddOns' switches sit
+  together there): "DoT tracker", "Control bar" ("Polymorph bar" for a
+  Mage), the tooltip pointing to the sub-page; "all" keeps "Enable DoT
+  tracker" and "Enable crowd control". The chain rule: `Nest` keeps
+  SetParentInitializer when the parent is on the page AND always adds the
+  predicate as a modify predicate, and every predicate checks the whole
+  chain (`PlatesOn`, `DiesOn`, the curse marker's, the health text's);
+  `Greyed` greys Reset buttons of the tracker (Reset size, Reset <panel>,
+  Reset order and colors); the bar's size rows get `opts.modify`. Live
+  greying (DBR's find, confirmed by the Toolkit lead: the client
+  evaluates a row again only when its DIRECT parent's setting changes,
+  Blizzard_SettingControls.lua 297-302): every greyed row watches every
+  switch in its chain through `DyresToolkit.WatchSettings` (feature-tested;
+  the initializer's own AddEvaluateStateCVar). `Switch` records a Flag's or
+  Choice's variable (`rowVariable`), `Nest` builds the chain (`chains`) from
+  its parent, `Virtual(variable)` stands for a switch on a host's top page
+  (watched, not nested under), `Nest`'s `also` adds switches a predicate
+  reads outside the chain (the DIES rows: Show DIES, Also on nameplates),
+  `Greyed` takes the parent, and the bar's size rows get `opts.watch`. Note
+  set watches Stack chime. Crowd control (John, 2026-11-27: "if the
+  polymorph bar/macro master switch is off, disable all the functionality,
+  not just the bar"; Toolkit 2.17.0 Control.lua: `store.enabled == false`
+  sends no announcement and deletes the macros, as `store.macros ==
+  false`; claims stay): every control row is under "Enable crowd control"
+  (the macros, their markers under the macros, the messages, Say, the
+  timers, the sizes). "! Curse" is not crowd control's (John,
+  2026-11-27: "Keep ! Curse separate"): its own switch `dots.curseMacro`
+  (row "Keep the "! Curse" macro", `DDT_DOTS_CURSE_MACRO`, in the tracker
+  section's Curse slot, under "Enable DoT tracker"; default from the old
+  `control.macros`, in SanitizeDB and the profile); `DDT.ApplyCurseMacro`
+  reads only it (and the dots owner), and `RefreshControl` no longer calls
+  it. DotPredict reads only
+  `db.predict`, so Damage to come keeps its own switch, not the tracker's.
+  One name per section (John, 2026-11-27: "let's have the same name used
+  consistently ... Make the others consistent too"): `TITLES` = tracker
+  "DoT Tracker", dots "DoTs", control "Crowd Control" (every class; not
+  "Polymorph", so the name is one), cues "Debuff Cues"; registered as each
+  section's title (the hosts read `SettingsSectionTitle`), the master
+  labels, and our own page names: one sub-page per section (`Page`; "DoTs"
+  only for a class with DoTs, "Debuff Cues" only when `HasCues()`). The
+  control widget's title is "Crowd Control" too. "cues" (`CuesSection`,
+  John: "add all the Warlock procs/alerts"; the hosts draw it on their
+  "Procs" page): FrostSection, ChillSection, BrandSection, after a heading
+  "Debuff Cues" on a host page; false for "master" (each cue has its own
+  Show), another class, or no cue built (a Warlock on Classic Era, every
+  class but Mage and Warlock). Not learned (John, 2026-11-27: "I expect to
+  see every setting available for warlocks, but only enabled if I have it.
+  Not a generic banner"): every row of a cue, buttons too, is greyed while
+  its talent is not known (`NeedsKnown`), with a function tooltip that
+  ends " Greyed out: you have not learned <cue> yet." (`Learned`, the
+  Toolkit's proc-row wording); no primer. Winter's Chill: `ChillTalentKnown`
+  (cached, read on talent events). Demonic Brand: `DDT.BrandTalentKnown`
+  (Frost.lua `ReadBrandTalent`: 1293695, the hidden talent passive from
+  Wowhead and warcraftmaps.com, NOT checked in the client, else the name to
+  an ID that is not the debuff 1293696; read as the page draws; no API
+  counts as known); only the rows use it, the pentagram does not. The
+  frozen and chilled arcs need no talent and are never greyed. Button rows
+  are labelled by what they do: "Preview <cue>", "Reset <cue>", "Test the
+  stack chime" (buttons "Preview", "Reset", "Test"). Every button row that
+  can be greyed (the cues' buttons, `Greyed`'s Resets) goes through
+  `GreyLabel` (Dyre's Toolkit `GreyButtonLabel`, feature-tested; John,
+  2026-11-27: "the inconsistent label enable/disable": on WoW: Forever a
+  button row greys only its button). Before this, the
+  marks were in "dots" and our own DoTs page held "tracker" then "dots" on
+  one layout
+  (`masters` keeps the Enable row per layout), so the nameplate dots and
+  Each DoT now come after Damage to come.
 - Profile (John, 2026-11-17: "start working on the global "all Dyre addons
   settings" syncing with DT's profile, so there is one place to go to
   persist your profile"; the design is the Toolkit's docs/PROFILES.md, John
@@ -516,11 +624,14 @@ character knows, at its best rank; none for a spell it does not know.
     (help text, not a setting) and WTF's announcement page (part 4 below).
   - The smart curse: the tracker's `names.smartCurse` =
     "DyresDebuffTrackerSmartCurse" (Warlock only), Bindings.xml (CLICK
-    binding, header DYRESDEBUFFTRACKER, "Smart curse (Warlock)"), and "! Curse"
+    binding, header DYRESDEBUFFTRACKER, category "Dyre's AddOns": the Key
+    Bindings section, with the Toolkit's keys; John, 2026-11-26: not in AddOns;
+    "Smart curse (Warlock)"), and "! Curse"
     (`DDT.ApplyCurseMacro`): a Toolkit macro keeper sharing
     `db.macrosOwned`, written only while DDT owns `dots:WARLOCK` and
-    `control.macros` is on (OnOwnerChanged reapplies it); deleted when the
-    macros are off or Weakness is unknown (only one DDT wrote).
+    `dots.curseMacro` is on (OnOwnerChanged reapplies it; before
+    2026-11-27 it followed `control.macros`); deleted when that is off or
+    Weakness is unknown (only one DDT wrote).
   - The import (`DDT.ImportFromTools`, Core.lua, from `DDT.Start` after the
     profile joins and before the engines; DBR 1.13.0's model): once per
     character (`db.toolsImported`, in the profile; a profile copy sets it),
@@ -584,7 +695,7 @@ character knows, at its best rank; none for a spell it does not know.
   and its contract is still 2. An unreadable version is let through.
 - No byte-for-byte copy tests of toolkit files (John, 2026-10-30): the
   suite loads ../DyresToolkit when it is there, else (CI, or
-  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.10.2 in tests/toolkit. The copy
+  DDT_TOOLKIT_COPY=1) the copy of Toolkit v2.17.0 in tests/toolkit. The copy
   may lag; refresh it from the Toolkit's release tag when DDT needs newer
   toolkit behavior.
 - Use the toolkit's shared code; never copy it here: `CreateAuraContainer`

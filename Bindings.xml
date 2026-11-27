@@ -1,4 +1,4 @@
 <Bindings>
     <Binding name="CLICK DyresDebuffTrackerSmartCurse:LeftButton" runOnUp="true" header="DYRESDEBUFFTRACKER"
-        category="ADDONS"/>
+        category="Dyre's AddOns"/>
 </Bindings>

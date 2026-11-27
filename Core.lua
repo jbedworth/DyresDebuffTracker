@@ -354,6 +354,10 @@ function DDT.SanitizeDB(db, classData)
         colors = {}, panelColors = {},
         curseMode = Choice(dots.curseMode, DDT.CURSE_MODES, "last"),
         curseMarker = dots.curseMarker ~= false,
+        -- "! Curse" has its own switch (John, 2026-11-27: "Keep ! Curse
+        -- separate"): before, it followed control.macros, so a save without
+        -- it starts from that.
+        curseMacro = Bool(dots.curseMacro, not (type(db.control) == "table" and db.control.macros == false)),
     }
     if clean.trackerSize ~= false then
         DDT.ApplyTrackerSize(clean)
@@ -790,6 +794,25 @@ function DDT.OpenSettings()
     end
 end
 
+-- The toolkit check, the saved settings' repair, and the engines, once. At
+-- PLAYER_LOGIN, or earlier when a host AddOn (Warlock Tools Forever, Mage
+-- Tools Forever) builds its page with our settings sections at its own
+-- PLAYER_LOGIN before ours runs (Dyre's Toolkit 2.17.0: "a host builds its
+-- page at its PLAYER_LOGIN, which may come before yours"). True when the
+-- engines started.
+function DDT.EnsureStarted()
+    if DDT.started == nil then
+        DDT.db = DDT.db or {}
+        DDT.toolkit = DDT.Toolkit()
+        DDT.available = DDT.toolkit ~= nil
+        DDT.started = DDT.available
+        if DDT.available then
+            DDT.Start()
+        end
+    end
+    return DDT.started == true
+end
+
 local events = CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
 events:RegisterEvent("PLAYER_LOGIN")
@@ -799,19 +822,17 @@ events:SetScript("OnEvent", function(self, event, name)
             self:UnregisterEvent("ADDON_LOADED")
             DyresDebuffTrackerDB = type(DyresDebuffTrackerDB) == "table" and DyresDebuffTrackerDB or {}
             DDT.db = DyresDebuffTrackerDB
+            -- Our settings sections, for the host pages (Options.lua).
+            DDT.RegisterSettingsSections()
         end
         return
     end
     self:UnregisterEvent("PLAYER_LOGIN")
     self:UnregisterEvent("ADDON_LOADED")
-    DDT.db = DDT.db or {}
-    DDT.toolkit = DDT.Toolkit()
-    DDT.available = DDT.toolkit ~= nil
-    if not DDT.available then
+    if not DDT.EnsureStarted() then
         DDT.Report(DDT.TOOLKIT_MISSING)
         return
     end
-    DDT.Start()
     DDT.InitializeOptions()
     DDT.toolkit.RegisterAddOn({addon = addonName, title = DDT.TITLE, setLocked = DDT.SetLocked,
         openSettings = DDT.OpenSettings})

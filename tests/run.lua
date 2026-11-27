@@ -2,7 +2,7 @@
 --   lua5.1 tests/run.lua
 -- It loads Dyre's Toolkit's real files from ../DyresToolkit when that folder
 -- is there; else (as in CI, which has only this repository, or with
--- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.10.2). The
+-- DDT_TOOLKIT_COPY=1) from the copy in tests/toolkit (Toolkit v2.17.0). The
 -- copy may lag; the tests check behavior, never that the two match.
 
 if _VERSION ~= "Lua 5.1" then
@@ -151,10 +151,19 @@ local SPELLS = {[172] = "Corruption", [348] = "Immolate", [980] = "Curse of Agon
     [12579] = "Winter's Chill"}
 
 -- The client for one character: its class, its spells, the AddOns loaded.
+-- The variables a row watches (WatchSettings), as one sorted string.
+local function Watched(setting)
+    local initializer = setting.initializer or setting
+    local list = {}
+    for _, variable in ipairs(initializer.watch or {}) do list[#list + 1] = variable end
+    table.sort(list)
+    return table.concat(list, ",")
+end
+
 local function fixture(options)
     options = options or {}
     local state = {messages = {}, frames = {}, named = {}, macros = {}, settings = {}, pages = {}, headings = {},
-        timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0}
+        timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0, duplicates = {}, primers = {}}
     local env = setmetatable({}, {__index = _G})
     env._G = env
     state.env = env
@@ -272,6 +281,11 @@ local function fixture(options)
                 self.modify = before and function() return before() and predicate() end or predicate
             end,
             AddShownPredicate = function(self, predicate) self.shown = predicate end,
+            -- Blizzard's: evaluate the row again when that variable changes.
+            AddEvaluateStateCVar = function(self, variable)
+                self.watch = self.watch or {}
+                self.watch[#self.watch + 1] = variable
+            end,
             SetParentInitializer = function() end, InitFrame = function() end}
     end
     if not options.noSettings then
@@ -285,6 +299,9 @@ local function fixture(options)
             end,
             RegisterAddOnCategory = function() end,
             RegisterProxySetting = function(category, variable, kind, name, default, get, set)
+                if state.settings[variable] then
+                    state.duplicates[#state.duplicates + 1] = variable
+                end
                 local setting = {category = category.name, variable = variable, name = name, get = get, set = set,
                     default = default}
                 state.settings[variable] = setting
@@ -314,14 +331,24 @@ local function fixture(options)
                 return options
             end,
             CreateColorSwatch = function(_, setting) setting.initializer = Initializer(setting); return setting.initializer end,
+            CreateElementInitializer = function(template, data)
+                local element = Initializer(nil)
+                element.template, element.data = template, data
+                state.primers[#state.primers + 1] = element
+                return element
+            end,
             OpenToCategory = function(id) state.opened = id end,
         }
         env.CreateSettingsListSectionHeaderInitializer = function(text) return {text = text} end
         env.MinimalSliderWithSteppersMixin = {Label = {Right = 1}}
         state.buttons = {}
+        state.buttonRows = {}
         env.CreateSettingsButtonInitializer = function(name, text, onClick)
             state.buttons[name .. ": " .. text] = onClick
-            return {text = name .. " [" .. text .. "]"}
+            local row = Initializer(nil)
+            row.text = name .. " [" .. text .. "]"
+            state.buttonRows[name .. ": " .. text] = row
+            return row
         end
     end
     env.DyresToolkitDB = {snapToGrid = false}
@@ -356,7 +383,9 @@ local function fixture(options)
     end
     local events = state.frames[first]
     events.scripts.OnEvent(events, "ADDON_LOADED", "DyresDebuffTracker")
-    events.scripts.OnEvent(events, "PLAYER_LOGIN")
+    if not options.noLogin then
+        events.scripts.OnEvent(events, "PLAYER_LOGIN")
+    end
     state.env, state.ddt, state.events = env, ddt, events
     function state.said(fragment)
         for _, message in ipairs(state.messages) do
@@ -402,12 +431,13 @@ test("a Warlock gets the DoT tracker, the dots, the prediction, and the control 
     equal(#state.messages, 0, "nothing said at login")
 end)
 
-test("two settings pages, DoTs and Crowd control, each with its own on/off switch", function()
+test("settings pages, one per section, named as the sections; the tracker and crowd control each with a switch", function()
     local state = fixture()
-    equal(table.concat(state.pages, "|"), "Dyre's AddOns > Debuff Tracker|Debuff Tracker > DoTs|Debuff Tracker > Crowd control")
+    equal(table.concat(state.pages, "|"), "Dyre's AddOns > Debuff Tracker|Debuff Tracker > DoT Tracker|"
+        .. "Debuff Tracker > DoTs|Debuff Tracker > Crowd Control")
     local dots, control = state.settings.DDT_DOTS, state.settings.DDT_CONTROL
-    equal(dots.category, "DoTs")
-    equal(control.category, "Crowd control")
+    equal(dots.category, "DoT Tracker")
+    equal(control.category, "Crowd Control")
     equal(dots.get(), true)
     control.set(false)
     equal(state.ddt.db.control.enabled, false)
@@ -431,8 +461,8 @@ test("with Warlock Tools Forever 1.4.1 loaded (it never claims), DDT makes nothi
     equal(state.named.DyresDebuffTrackerControlRow1, nil)
     equal(#state.macros, 0, "no macros written")
     equal(ddt.KindStatus("control"), "Warlock Tools Forever")
-    contains(state.heading("Warlock Tools Forever has your DoTs"), "Debuff Tracker:")
-    contains(state.heading("has this for your class"), "Warlock Tools Forever")
+    contains(state.heading("Warlock Tools Forever shows your DoTs"), "Debuff Tracker:")
+    contains(state.heading("shows these for you now"), "Warlock Tools Forever")
 end)
 
 test("a Warlock Tools Forever that claims wins by priority, and DDT's pages say so", function()
@@ -589,7 +619,7 @@ test("a class with no table gets nothing but its pages' note", function()
     equal(ddt.classData, nil)
     equal(ddt.dotTracker, nil)
     equal(ddt.controlTracker, nil)
-    assert(state.heading("nothing for your class yet"), "said on the page")
+    assert(state.heading("nothing for your class"), "said on the page")
     equal(#state.messages, 0, "not in chat")
     equal(type(ddt.db.dots), "table", "the saved settings are still repaired")
 end)
@@ -648,7 +678,7 @@ test("Tracker size: one percent, 75 to 125, sets the bar width and the compact i
     local state = fixture({oldPanels = true})
     local db, setting = state.ddt.db, state.settings.DDT_DOTS_TRACKER_SIZE
     assert(setting, "the slider on the DoTs page")
-    equal(setting.category, "DoTs")
+    equal(setting.category, "DoT Tracker")
     equal(setting.default, 100)
     equal(db.dots.trackerSize, 100)
     equal(db.dots.sizes.bars.barWidth, 290, "default bar width")
@@ -704,7 +734,7 @@ test("Grow: Down or Up per DoT panel, repaired, rebuilt, and shown only with a T
         equal(db.dots.grow[key], "down", key .. " grows down by default")
         local setting = state.settings["DDT_DOTS_GROW_" .. key:upper()]
         assert(setting, key .. " has a Grow setting")
-        equal(setting.category, "DoTs")
+        equal(setting.category, "DoT Tracker")
         equal(setting.default, "down")
         equal(setting.get(), "down")
     end
@@ -750,7 +780,7 @@ test("Hide empty DoT slots: a checkbox only with the Toolkit's flag, repaired, r
     local state = fixture({before = WithFlag})
     local db, setting = state.ddt.db, state.settings.DDT_DOTS_HIDE_EMPTY
     assert(setting, "the checkbox on the DoTs page")
-    equal(setting.category, "DoTs")
+    equal(setting.category, "DoT Tracker")
     equal(setting.name, "Hide empty DoT slots")
     equal(setting.default, false)
     equal(db.dots.hideEmpty, false, "off by default")
@@ -800,7 +830,7 @@ test("Panel switches: three checkboxes only with the Toolkit's TRACKER_PANELS, r
     for suffix, name in pairs(names) do
         local setting = state.settings["DDT_DOTS_SHOW_" .. suffix]
         assert(setting, "the checkbox " .. name)
-        equal(setting.category, "DoTs")
+        equal(setting.category, "DoT Tracker")
         equal(setting.name, name)
         equal(setting.default, true)
     end
@@ -862,11 +892,11 @@ test("Panel frame and outline: a checkbox with TRACKER_FRAME, a slider with TRAC
     local db, tracker = state.ddt.db, state.ddt.dotTracker
     local frame, outline = state.settings.DDT_DOTS_FRAME, state.settings.DDT_DOTS_OUTLINE
     assert(frame, "the frame checkbox")
-    equal(frame.category, "DoTs")
+    equal(frame.category, "DoT Tracker")
     equal(frame.name, "Show panel frame")
     equal(frame.default, true)
     assert(outline, "the outline slider")
-    equal(outline.category, "DoTs")
+    equal(outline.category, "DoT Tracker")
     equal(outline.name, "Outline width")
     equal(outline.default, 3)
     equal(db.dots.frame, true, "the frame shows by default")
@@ -937,7 +967,9 @@ test("WTF parity: every WTF tracker and prediction setting has a DDT row", funct
             -- Crowd control (WTF: markers, macros, plate timers; Bar size is the widget's)
             "DDT_CONTROL_MACROS", "DDT_CONTROL_PLATES", "DDT_CONTROL_MARKER_BANISH"}) do
         assert(s[name], "a DDT row for " .. name)
-        equal(s[name].category, name:find("^DDT_CONTROL") and "Crowd control" or "DoTs", name)
+        equal(s[name].category, name:find("^DDT_CONTROL") and "Crowd Control"
+            or (name:find("^DDT_DOTS_PLATES") or name:find("^DDT_DOTS_ORDER") or name:find("^DDT_DOTS_COLOR")
+                or name:find("^DDT_DOTS_ONPLATE")) and "DoTs" or "DoT Tracker", name)
     end
     -- Each DoT: its place, color, and nameplate dot, for every Warlock slot.
     local slots = state.ddt.classData.dots
@@ -1048,14 +1080,14 @@ test("Panels: one sub-section per panel with its own rows; the tracker-wide rows
     end})
     local s, db, tracker = state.settings, state.ddt.db, state.ddt.dotTracker
     for _, name in ipairs({"Panels", "Target panel", "Focus panel", "Others panel"}) do
-        assert(state.heading("DoTs: " .. name), "the heading " .. name)
+        assert(state.heading("DoT Tracker: " .. name), "the heading " .. name)
     end
     for _, key in ipairs({"TARGET", "FOCUS", "LIST"}) do
         for _, row in ipairs({"HEALTH", "HEALTH_TEXT", "TRACKER_SIZE", "BARS_BARWIDTH", "BARS_LINEHEIGHT",
                 "BARS_TEXTSCALE", "BARS_NAMEPOSITION", "COMPACT_ICONSIZE", "COMPACT_NAMEWIDTH", "COMPACT_TEXTSCALE",
                 "COMPACT_NAMEPOSITION"}) do
             assert(s["DDT_PANEL_" .. key .. "_" .. row], key .. " " .. row)
-            equal(s["DDT_PANEL_" .. key .. "_" .. row].category, "DoTs")
+            equal(s["DDT_PANEL_" .. key .. "_" .. row].category, "DoT Tracker")
         end
         for _, row in ipairs({"DDT_DOTS_PANEL_COLOR_", "DDT_DOTS_PANEL_OPACITY_"}) do
             assert(s[row .. key], row .. key)
@@ -1190,11 +1222,32 @@ test("WTF parity: the smart curse slot, its key binding button, and \"! Curse\" 
         assert(macro, "\"! Curse\" written")
         contains(macro.body, "Curse of Weakness")
         equal(ddt.db.macrosOwned["! Curse"], true, "kept per character")
-        -- The control macros off: deleted.
-        s.DDT_CONTROL_MACROS.set(false)
-        for _, each in ipairs(state.macros) do
-            assert(each.name ~= "! Curse", "deleted with the control macros")
+        -- Its own switch (John, 2026-11-27: "Keep ! Curse separate"): crowd
+        -- control's switches leave it; "Keep the ! Curse macro" off deletes it.
+        local function HasCurse()
+            for _, each in ipairs(state.macros) do
+                if each.name == "! Curse" then return true end
+            end
+            return false
         end
+        s.DDT_CONTROL_MACROS.set(false)
+        equal(HasCurse(), true, "the control macros off leave it")
+        s.DDT_CONTROL.set(false)
+        equal(HasCurse(), true, "crowd control off leaves it")
+        s.DDT_CONTROL.set(true)
+        s.DDT_DOTS_CURSE_MACRO.set(false)
+        equal(ddt.db.dots.curseMacro, false)
+        equal(HasCurse(), false, "deleted with its own switch")
+        s.DDT_DOTS_CURSE_MACRO.set(true)
+        equal(HasCurse(), true, "written again")
+        -- Under the DoT tracker's switch, not crowd control's.
+        equal(s.DDT_DOTS_CURSE_MACRO.category, "DoT Tracker")
+        equal(Watched(s.DDT_DOTS_CURSE_MACRO), state.toolkit.WatchSettings and "DDT_DOTS" or "")
+        -- A save from before starts from the control macros switch.
+        equal(ddt.SanitizeDB({control = {macros = false}}, ddt.classData).dots.curseMacro, false)
+        equal(ddt.SanitizeDB({}, ddt.classData).dots.curseMacro, true)
+        equal(ddt.SanitizeDB({control = {macros = false}, dots = {curseMacro = true}}, ddt.classData).dots.curseMacro,
+            true, "its own value wins")
         -- WTF has the DoTs (an older WTF that claims): DDT writes nothing.
         local wtf = fixture({book = book, loaded = {WarlockToolsForever = "1.10.1"}, before = function(st)
             st.toolkit.ClaimOwner("dots:WARLOCK", "WarlockToolsForever", 10)
@@ -1477,7 +1530,7 @@ test("the crowd-control bar's look: width, bar height, text size, opacity; a Mag
     for _, name in ipairs({"WIDTH", "BARHEIGHT", "TEXTSCALE", "OPACITY", "SCALE"}) do
         local setting = s["DYRE_DYRESDEBUFFTRACKER_CONTROL_" .. name]
         assert(setting, "the " .. name .. " slider")
-        equal(setting.category, "Crowd control")
+        equal(setting.category, "Crowd Control")
     end
     -- The defaults draw the Toolkit's own look.
     local look = ddt.ControlLook()
@@ -1700,10 +1753,10 @@ test("frozen and chilled arcs: Mages only, on by default, with their settings, r
     assert(state.ddt.frostArcs, "a Mage has the arcs")
     local setting = state.settings.DDT_FROST
     assert(setting, "the switch")
-    equal(setting.category, "DoTs")
+    equal(setting.category, "Debuff Cues")
     equal(setting.default, true)
     equal(state.ddt.db.frost.enabled, true, "on by default")
-    assert(state.heading("DoTs: Frozen and chilled"), "its heading on the DoTs page")
+    assert(state.heading("Debuff Cues: Frozen and chilled"), "its heading on the Debuff Cues page")
     equal(state.settings.DDT_FROST_OFFSET.default, 10)
     equal(state.settings.DDT_FROST_SIZE.default, 100)
     equal(#state.messages, 0)
@@ -1902,7 +1955,7 @@ test("Demonic Brand pentagram: Warlocks where the client knows it; Show, Size, H
     assert(state.ddt.brandArcs, "a Warlock on Forever has it")
     local s = state.settings
     equal(s.DDT_BRAND.name, "Show")
-    equal(s.DDT_BRAND.category, "DoTs")
+    equal(s.DDT_BRAND.category, "Debuff Cues")
     equal(s.DDT_BRAND.default, true)
     equal(state.ddt.db.brand.enabled, true, "on by default")
     equal(s.DDT_BRAND_SIZE.name, "Size")
@@ -1913,13 +1966,13 @@ test("Demonic Brand pentagram: Warlocks where the client knows it; Show, Size, H
     assert(s.DDT_BRAND_SIZE.labelFormatter and s.DDT_BRAND_OFFSET.labelFormatter, "label formatters")
     equal(s.DDT_BRAND_SIZE.labelFormatter(s.DDT_BRAND_SIZE.get()), "100%")
     equal(s.DDT_BRAND_OFFSET.labelFormatter(s.DDT_BRAND_OFFSET.get()), "10")
-    assert(state.buttons["Demonic Brand: Reset Demonic Brand"], "the Reset button")
-    -- Its own heading, last on the DoTs page, where Mages see "Frozen and chilled".
+    assert(state.buttons["Reset Demonic Brand: Reset"], "the Reset button")
+    -- Its own heading, on the Debuff Cues page, where Mages see "Frozen and chilled".
     local last
     for index, heading in ipairs(state.headings) do
-        if heading:find("^DoTs: ") and not heading:find("[", 1, true) then last = index end
+        if heading:find("^Debuff Cues: ") and not heading:find("[", 1, true) then last = index end
     end
-    equal(state.headings[last], "DoTs: Demonic Brand", "the DoTs page's last heading")
+    equal(state.headings[last], "Debuff Cues: Demonic Brand", "the Debuff Cues page's heading")
     equal(#state.messages, 0)
     -- Every Warlock: no talent or spec is read.
     assert(Branded({book = {{172, "Corruption"}}}).ddt.brandArcs, "a Warlock without Searing Pain too")
@@ -2065,7 +2118,7 @@ test("Demonic Brand pentagram: Show, Size, Height, and Reset apply at once; the 
     equal(arcs.byUnit.nameplate2, nil, "off: a new plate gets none")
     -- Reset: on, 100%, 10 pixels, on every plate at once; the same table.
     local brand = db.brand
-    state.buttons["Demonic Brand: Reset Demonic Brand"]()
+    state.buttons["Reset Demonic Brand: Reset"]()
     equal(db.brand, brand, "changed in place")
     equal(db.brand.enabled, true)
     equal(db.brand.size, 100)
@@ -2094,7 +2147,7 @@ end)
 -- target's nameplate with no debuff, to tune Size and Height live.
 test("Demonic Brand preview: on the target's plate with no debuff, live, and it ends as it should", function()
     local state = Branded({engine = true, book = {{172, "Corruption"}}})
-    local arcs, press = state.ddt.brandArcs, state.buttons["Demonic Brand: Preview"]
+    local arcs, press = state.ddt.brandArcs, state.buttons["Preview Demonic Brand: Preview"]
     assert(press, "the Preview button")
     -- No target plate: a message, nothing shown.
     equal(press(), "no plate")
@@ -2128,7 +2181,7 @@ test("Demonic Brand preview: on the target's plate with no debuff, live, and it 
     equal(frame.point[5], 20, "40 pixels at scale 2")
     state.settings.DDT_BRAND.set(false)
     equal(frame.shown, true, "for tuning, also while Show is off")
-    state.buttons["Demonic Brand: Reset Demonic Brand"]()
+    state.buttons["Reset Demonic Brand: Reset"]()
     equal(frame.scale, 1)
     equal(frame.point[5], 10)
     -- A second press ends it.
@@ -2240,15 +2293,15 @@ test("Winter's Chill arc: Mages only, on by default, rows, repaired, both client
     equal(state.settings.DDT_CHILL_SIZE.labelFormatter(150), "150%")
     equal(state.settings.DDT_CHILL_OFFSET.default, 36)
     equal(state.settings.DDT_CHILL_OFFSET.name, "Height above nameplate")
-    assert(state.heading("DoTs: Winter's Chill"), "its heading on the DoTs page")
-    assert(state.buttons["Winter's Chill: Preview"] and state.buttons["Winter's Chill: Reset Winter's Chill"])
+    assert(state.heading("Debuff Cues: Winter's Chill"), "its heading on the Debuff Cues page")
+    assert(state.buttons["Preview Winter's Chill: Preview"] and state.buttons["Reset Winter's Chill: Reset"])
     equal(state.ddt.db.wintersChill.enabled, true, "on by default")
     equal(#state.messages, 0)
     -- After the frozen and chilled rows, before nothing of the Brand's (a Mage has none).
     local frozenAt, chillAt
     for index, heading in ipairs(state.headings) do
-        if heading == "DoTs: Frozen and chilled" then frozenAt = index end
-        if heading == "DoTs: Winter's Chill" then chillAt = index end
+        if heading == "Debuff Cues: Frozen and chilled" then frozenAt = index end
+        if heading == "Debuff Cues: Winter's Chill" then chillAt = index end
     end
     assert(frozenAt and chillAt and chillAt > frozenAt, "after Frozen and chilled")
     local bad = Mage({saved = {wintersChill = {enabled = "yes", offset = -5, size = 999}}}).ddt.db.wintersChill
@@ -2476,7 +2529,7 @@ test("Winter's Chill arc: Size, Height, Reset live; the profile carries them; th
     state.settings.DDT_CHILL.set(false)
     equal(arcs.byUnit.nameplate1, nil, "off: none")
     local chill = db.wintersChill
-    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    state.buttons["Reset Winter's Chill: Reset"]()
     equal(db.wintersChill, chill, "changed in place")
     equal(db.wintersChill.enabled, true)
     equal(db.wintersChill.size, 100)
@@ -2492,7 +2545,7 @@ test("Winter's Chill arc: Size, Height, Reset live; the profile carries them; th
     equal(state.ddt.ProfileSettings(db).wintersChill.size, 50)
     equal(db.frost.size, 100, "the arcs keep their own settings")
     -- The preview: our own frame on the target's plate, 3 of 5 lit, no engine.
-    local press = state.buttons["Winter's Chill: Preview"]
+    local press = state.buttons["Preview Winter's Chill: Preview"]
     equal(press(), "no plate")
     contains(state.messages[#state.messages], "Winter's Chill preview: target a mob")
     local plate = AddPlate(state, "nameplate2")
@@ -2645,7 +2698,7 @@ test("Winter's Chill chime on Classic Era: one note per stack of your own, risin
     equal(state.settings.DDT_CHILL_CHIME.name, "Stack chime")
     equal(state.settings.DDT_CHILL_CHIME.default, true)
     equal(state.settings.DDT_CHILL_NOTESET.default, "bassoon")
-    assert(state.buttons["Winter's Chill: Test chime"], "Test chime")
+    assert(state.buttons["Test the stack chime: Test"], "Test chime")
     equal(#state.messages, 0, "nothing said at login")
     Log(state, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
     for stack = 2, 5 do
@@ -2697,7 +2750,7 @@ test("Winter's Chill chime on Classic Era: one note per stack of your own, risin
     state.played, state.timers = {}, {}
     state.settings.DDT_CHILL_NOTESET.set("bassoon")
     state.played = {}
-    state.buttons["Winter's Chill: Test chime"]()
+    state.buttons["Test the stack chime: Test"]()
     equal(state.played[1], "bassoon1")
     equal(#state.timers, 4)
     for _, fn in ipairs(state.timers) do fn() end
@@ -2705,7 +2758,7 @@ test("Winter's Chill chime on Classic Era: one note per stack of your own, risin
     -- Reset puts the chime back on, Bassoon.
     state.settings.DDT_CHILL_CHIME.set(false)
     state.settings.DDT_CHILL_NOTESET.set("sax")
-    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    state.buttons["Reset Winter's Chill: Reset"]()
     equal(state.ddt.db.wintersChill.chime, true)
     equal(state.ddt.db.wintersChill.noteSet, "bassoon")
     equal(ChimeOn(state), true, "Reset registers it again")
@@ -2721,7 +2774,7 @@ test("Winter's Chill chime: an older Dyre's Sounds plays sax; none plays nothing
     equal(state.played[1], "sax1", "no bassoon: the sax note of the same number")
     local silent = Mage()
     Log(silent, "SPELL_AURA_APPLIED", "Player-1", 12579, "Winter's Chill")
-    equal(silent.buttons["Winter's Chill: Test chime"](), false)
+    equal(silent.buttons["Test the stack chime: Test"](), false)
     contains(silent.messages[#silent.messages], "install Dyre's Sounds")
     local bad = Mage({saved = {wintersChill = {chime = "yes", noteSet = "tuba"}}}).ddt.db.wintersChill
     equal(bad.chime, true)
@@ -2791,7 +2844,7 @@ test("Winter's Chill chime on WoW: Forever: the game's aura sounds on your targe
     -- Added: note 1; ApplicationsIncreased: the 3rd note.
     equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
     assert(state.settings.DDT_CHILL_NOTESET, "Note set row")
-    assert(state.buttons["Winter's Chill: Test chime"], "Test chime")
+    assert(state.buttons["Test the stack chime: Test"], "Test chime")
     equal(#state.messages, 0, "nothing said at login")
     -- Off: removed at once; on again: registered again.
     state.settings.DDT_CHILL_CHIME.set(false)
@@ -2829,12 +2882,12 @@ test("Winter's Chill chime on WoW: Forever: the game's aura sounds on your targe
     state.settings.DDT_CHILL_CHIME.set(true)
     -- Test chime plays what this client plays: note 1, then the 3rd note.
     state.played, state.timers = {}, {}
-    state.buttons["Winter's Chill: Test chime"]()
+    state.buttons["Test the stack chime: Test"]()
     for _, fn in ipairs(state.timers) do fn() end
     equal(table.concat(state.played, ","), "bassoon1,bassoon3,bassoon3,bassoon3,bassoon3")
     -- Reset: on, Bassoon, registered.
     state.settings.DDT_CHILL_NOTESET.set("sax")
-    state.buttons["Winter's Chill: Reset Winter's Chill"]()
+    state.buttons["Reset Winter's Chill: Reset"]()
     equal(AuraRegistered(state), "0:bassoon1.wav,1:bassoon3.wav")
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
     equal(state.said("chime aura on=true registered=true sounds=2 deferred=false noteSet=bassoon library=yes"), true)
@@ -2969,14 +3022,15 @@ test("Winter's Chill talent: known by any rank; not known: no arc, no chime, row
         local row = state.settings[variable]
         assert(row, variable .. " stays visible")
         equal(row.initializer.modify(), false, variable .. " greyed")
-        contains(row.tooltip or "", "Needs the Winter's Chill talent")
+        local tip = type(row.tooltip) == "function" and row.tooltip() or row.tooltip or ""
+        contains(tip, "Greyed out: you have not learned Winter's Chill yet.")
     end
     equal(state.ddt.db.wintersChill.enabled, true, "the saved settings stay")
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
     equal(state.said("chill talent not known"), true)
     -- The preview still shows, so the arc can be placed before the talent.
     state.plates.target = state.plates.nameplate1
-    equal(state.buttons["Winter's Chill: Preview"](), "started")
+    equal(state.buttons["Preview Winter's Chill: Preview"](), "started")
     -- Classic Era: no combat log chime either.
     local era = Mage({talents = {}, before = function(st) Sounds(st) end})
     equal(ChimeOn(era), false, "no talent: no combat log chime")
@@ -3030,6 +3084,554 @@ test("Winter's Chill talent: a Forever ID found by name; no API at all shows it,
     assert(ChillPlate(blind), "a check that cannot read never hides it")
     equal(blind.ddt.ChillTalentText(), "unreadable")
     equal(blind.settings.DDT_CHILL.initializer.modify(), true)
+end)
+
+-- Key Bindings (John, 2026-11-26: ours "should not be there" in the AddOns
+-- section): a Binding's category makes the section (classic_era
+-- Blizzard_SettingsDefinitions_Frame/Keybindings.lua 189-229), so every one
+-- is in "Dyre's AddOns", as Dyre's Toolkit's. The name stays: keys are saved by it.
+-- Settings sections (Dyre's Toolkit 2.17.0, SETTINGS_SECTIONS_VERSION 2). In
+-- CI the vendored Toolkit copy is older, so the documented contract is
+-- stubbed there: prefixed variables on a host page, unchanged on the owner's
+-- own page, and AddWidgetSettings' opts.variable (version 2).
+local function SectionToolkit(state)
+    local toolkit = state.toolkit
+    if type(toolkit.AddSettingsPrimer) ~= "function" then
+        function toolkit.AddSettingsPrimer(_, layout, text)
+            local element = state.env.Settings.CreateElementInitializer("DyresToolkitSettingsPrimerTemplate",
+                {text = text})
+            layout:AddInitializer(element)
+            return element
+        end
+    end
+    if type(toolkit.WatchSettings) ~= "function" then
+        function toolkit.WatchSettings(initializer, variables)
+            for _, variable in ipairs(variables) do initializer:AddEvaluateStateCVar(variable) end
+            return initializer
+        end
+    end
+    if (toolkit.SETTINGS_SECTIONS_VERSION or 0) >= 3 and type(toolkit.SettingsSectionTitle) == "function" then
+        return
+    end
+    local sections = {}
+    toolkit.SETTINGS_SECTIONS_VERSION = 3
+    local add = toolkit.AddWidgetSettings
+    function toolkit.AddWidgetSettings(category, layout, widget, opts)
+        if not (opts and (opts.variable or opts.modify or opts.watch)) then
+            return add(category, layout, widget, opts)
+        end
+        local settings, made = state.env.Settings, {}
+        local register = settings.RegisterProxySetting
+        settings.RegisterProxySetting = function(c, variable, ...)
+            local setting = register(c, opts.variable and opts.variable(variable) or variable, ...)
+            made[#made + 1] = setting
+            return setting
+        end
+        local ok, result = pcall(add, category, layout, widget, opts)
+        settings.RegisterProxySetting = register
+        assert(ok, result)
+        for _, setting in ipairs(made) do
+            if opts.modify and setting.initializer then setting.initializer:AddModifyPredicate(opts.modify) end
+            if opts.watch and setting.initializer then toolkit.WatchSettings(setting.initializer, opts.watch) end
+        end
+        return result
+    end
+    function toolkit.RegisterSettingsSection(spec)
+        sections[spec.addon] = sections[spec.addon] or {}
+        sections[spec.addon][spec.key] = spec
+        return true
+    end
+    function toolkit.SettingsSectionTitle(addon, key)
+        return sections[addon] and sections[addon][key] and sections[addon][key].title or nil
+    end
+    function toolkit.SettingsSections(addon)
+        local keys = {}
+        for key in pairs(sections[addon] or {}) do keys[#keys + 1] = key end
+        table.sort(keys)
+        return keys
+    end
+    local function Context(owner, key, host, filter, part)
+        local prefix = host and ("DYRE_" .. host:upper() .. "__") or ""
+        return {host = host or owner, owner = owner, key = key, class = select(2, state.env.UnitClass("player")),
+            filter = filter, own = host == nil, part = part or "all",
+            variable = function(name) return prefix .. name end}
+    end
+    function toolkit.OwnSettingsContext(addon, key, filter, part) return Context(addon, key, nil, filter, part) end
+    function toolkit.AddSettingsSection(category, layout, opts)
+        local section = sections[opts.addon] and sections[opts.addon][opts.key]
+        if section and section.build(category, layout,
+                Context(opts.addon, opts.key, opts.host, opts.filter, opts.part)) then
+            return "rows"
+        end
+        return opts.part ~= "master" and "link" or nil
+    end
+end
+
+local function Host(state, key, host, name, part)
+    local category, layout = state.env.Settings.RegisterVerticalLayoutSubcategory({name = host}, name or key)
+    return state.toolkit.AddSettingsSection(category, layout, {addon = "DyresDebuffTracker", key = key,
+        host = host, part = part, link = {name = key}}), category
+end
+
+local function Prefixed(state, prefix)
+    local list = {}
+    for variable in pairs(state.settings) do
+        if variable:sub(1, #prefix) == prefix then list[#list + 1] = variable end
+    end
+    table.sort(list)
+    return list
+end
+
+test("settings sections: tracker, dots, and control registered at ADDON_LOADED; none without the Toolkit's", function()
+    local state = fixture({before = SectionToolkit})
+    equal(table.concat(state.toolkit.SettingsSections("DyresDebuffTracker"), ","), "control,cues,dots,tracker")
+    equal(state.ddt.sectionsRegistered, true)
+    -- A Toolkit with no sections: nothing registered, the own pages as before.
+    local old = fixture({before = function(s) s.toolkit.SETTINGS_SECTIONS_VERSION = nil end})
+    equal(old.ddt.sectionsRegistered, nil)
+    assert(old.settings.DDT_DOTS and old.settings.DDT_CONTROL, "the own pages")
+end)
+
+test("settings sections: a host page's variables are prefixed, ours unchanged, none registered twice", function()
+    local state = fixture({before = SectionToolkit})
+    local own = {}
+    for variable in pairs(state.settings) do own[#own + 1] = variable end
+    local prefix = "DYRE_WARLOCKTOOLSFOREVER__"
+    for _, key in ipairs({"tracker", "dots", "control"}) do
+        equal(Host(state, key, "WarlockToolsForever"), "rows", key)
+    end
+    -- The cues: rows only where the class has a cue in this client.
+    Host(state, "cues", "WarlockToolsForever")
+    equal(#state.duplicates, 0, "no variable twice: " .. table.concat(state.duplicates, ","))
+    local hosted = Prefixed(state, prefix)
+    -- Every own row has its twin on the host pages, and nothing else is new.
+    equal(#hosted, #own, "one host row per own row")
+    for _, variable in ipairs(own) do
+        assert(state.settings[prefix .. variable], "host twin of " .. variable)
+        local page = state.settings[variable].category
+        equal(page == "DoT Tracker" or page == "DoTs" or page == "Crowd Control" or page == "Debuff Cues", true,
+            variable .. " stays on our page")
+    end
+    for _, variable in ipairs({"DDT_DOTS", "DDT_DOTS_THEME", "DDT_PREDICT", "DDT_DOTS_CURSE_MODE"}) do
+        equal(state.settings[prefix .. variable].category, "tracker", variable)
+    end
+    for _, variable in ipairs({"DDT_DOTS_PLATES", "DDT_DOTS_ORDER_1", "DDT_DOTS_COLOR_CORRUPTION"}) do
+        if state.settings[variable] then
+            equal(state.settings[prefix .. variable].category, "dots", variable)
+        end
+    end
+    for _, variable in ipairs({"DDT_CONTROL", "DDT_CONTROL_MACROS", "DDT_ANNOUNCE_FEAR",
+            "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE"}) do
+        equal(state.settings[prefix .. variable].category, "control", variable)
+    end
+    -- A second host (another prefix) is fine too.
+    equal(Host(state, "control", "MageToolsForever"), "rows")
+    equal(#state.duplicates, 0)
+end)
+
+test("settings sections: host rows read and write our live settings, the same as our own page", function()
+    local state = fixture({before = SectionToolkit})
+    for _, key in ipairs({"tracker", "dots", "control"}) do Host(state, key, "WarlockToolsForever") end
+    local s, db, prefix = state.settings, state.ddt.db, "DYRE_WARLOCKTOOLSFOREVER__"
+    s[prefix .. "DDT_DOTS_THEME"].set("compact")
+    equal(db.dots.theme, "compact")
+    equal(s.DDT_DOTS_THEME.get(), "compact", "our own page sees it")
+    s.DDT_PREDICT.set(false)
+    equal(s[prefix .. "DDT_PREDICT"].get(), false, "the host page sees ours")
+    s[prefix .. "DDT_DOTS_PLATES"].set(true)
+    equal(db.dots.plateDots, true)
+    s[prefix .. "DDT_ANNOUNCE_FEAR"].set(true)
+    equal(db.control.announce.fear, true)
+    s[prefix .. "DDT_CONTROL_MARKER_BANISH"].set(3)
+    equal(db.control.markers.banish, 3)
+    s[prefix .. "DDT_CONTROL"].set(false)
+    equal(db.control.enabled, false)
+    equal(state.toolkit.KindOwner("control:WARLOCK"), nil, "off steps aside, as from our page")
+    -- The bar's size: the widget's own setting, one saved table.
+    local scale = s[prefix .. "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE"]
+    scale.set(120)
+    equal(state.ddt.controlWidget:GetSetting("scale"), 120)
+    equal(s.DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE.get(), 120, "our own slider sees it")
+    equal(scale.labelFormatter(120), "120%")
+    -- The slot order swaps on the live table.
+    local first, second = db.dots.order[1], db.dots.order[2]
+    s[prefix .. "DDT_DOTS_ORDER_1"].set(second)
+    equal(db.dots.order[1], second)
+    equal(db.dots.order[2], first)
+    -- Rows nest under the tracker's Enable on our page; on a host's own
+    -- dots page they are greyed while the tracker is off.
+    local plates = s[prefix .. "DDT_DOTS_PLATES"].initializer
+    db.dots.enabled = true
+    equal(plates.modify(), true)
+    db.dots.enabled = false
+    equal(plates.modify(), false, "greyed while the tracker is off")
+end)
+
+test("settings sections: version 1 keeps the bar's size rows on our page only; version 2 maps them", function()
+    local state = fixture({before = function(s)
+        SectionToolkit(s)
+        s.toolkit.SETTINGS_SECTIONS_VERSION = 1
+    end})
+    equal(state.ddt.sectionsRegistered, true, "version 1 registers")
+    equal(Host(state, "control", "WarlockToolsForever"), "rows")
+    equal(#state.duplicates, 0)
+    assert(state.settings.DYRE_WARLOCKTOOLSFOREVER__DDT_CONTROL, "the other rows")
+    equal(#Prefixed(state, "DYRE_WARLOCKTOOLSFOREVER__DYRE_"), 0, "no size rows on the host page")
+    assert(state.settings.DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE, "our own page keeps them")
+    local two = fixture({before = SectionToolkit})
+    Host(two, "control", "WarlockToolsForever")
+    equal(#two.duplicates, 0)
+    equal(#Prefixed(two, "DYRE_WARLOCKTOOLSFOREVER__DYRE_DYRESDEBUFFTRACKER_CONTROL_"),
+        #Prefixed(two, "DYRE_DYRESDEBUFFTRACKER_CONTROL_"), "every size row, prefixed")
+end)
+
+test("settings sections: by class; nothing for a class without the kind; the host shows its link", function()
+    local mage = fixture({before = SectionToolkit, class = "MAGE", className = "Mage",
+        book = {{118, "Polymorph"}, {133, "Fireball"}}})
+    equal(Host(mage, "control", "MageToolsForever"), "rows")
+    assert(mage.settings.DYRE_MAGETOOLSFOREVER__DDT_ANNOUNCE_POLYMORPH, "Polymorph's announcement")
+    equal(mage.settings.DYRE_MAGETOOLSFOREVER__DDT_ANNOUNCE_FEAR, nil, "no Warlock spells")
+    equal(Host(mage, "tracker", "MageToolsForever"), "rows", "a Mage has DoTs")
+    equal(#mage.duplicates, 0)
+    local paladin = fixture({before = SectionToolkit, class = "PALADIN", className = "Paladin", book = {}})
+    equal(Host(paladin, "tracker", "SomeHost"), "link", "a Paladin has no DoTs")
+    equal(Host(paladin, "dots", "SomeHost"), "link")
+    local shaman = fixture({before = SectionToolkit, class = "SHAMAN", className = "Shaman", book = {}})
+    equal(Host(shaman, "control", "SomeHost"), "link", "a Shaman has no control spells")
+    -- A context for another class draws nothing.
+    local state = fixture({before = SectionToolkit})
+    local category, layout = state.env.Settings.RegisterVerticalLayoutSubcategory({name = "Host"}, "x")
+    equal(state.ddt.BuildSettingsSection("control", category, layout,
+        {class = "MAGE", own = false, variable = function(name) return "X_" .. name end}), false)
+    equal(state.settings.X_DDT_CONTROL, nil)
+end)
+
+test("settings sections: a host building before our PLAYER_LOGIN starts us once; no toolkit, no rows", function()
+    local state = fixture({before = SectionToolkit, noLogin = true})
+    equal(state.ddt.started, nil)
+    equal(Host(state, "control", "WarlockToolsForever"), "rows")
+    equal(state.ddt.started, true)
+    local tracker = state.ddt.controlTracker
+    assert(tracker, "the engines started")
+    state.events.scripts.OnEvent(state.events, "PLAYER_LOGIN")
+    equal(state.ddt.controlTracker, tracker, "started once")
+    assert(state.settings.DDT_CONTROL, "our own page at our login")
+    equal(#state.duplicates, 0)
+    equal(#state.messages, 0)
+    -- Without a usable Toolkit the section draws nothing.
+    local old = fixture({before = function(s)
+        SectionToolkit(s)
+        s.env.C_AddOns.GetAddOnMetadata = function(addon, field)
+            if field == "Version" and addon == "DyresToolkit" then return "2.9.0" end
+            if field == "Group" then return "DyresToolkit" end
+        end
+    end, noLogin = true})
+    equal(Host(old, "control", "WarlockToolsForever"), "link")
+end)
+
+-- Every modify predicate of a row (nil: always active).
+
+local function Active(setting)
+    local initializer = setting.initializer or setting
+    return initializer.modify == nil or initializer.modify() == true
+end
+
+test("greyed by the whole chain: a row is off while any switch above it is off, on our page", function()
+    local state = fixture({before = SectionToolkit})
+    local s, db = state.settings, state.ddt.db
+    db.dots.enabled, db.dots.plateDots, db.dots.curseMode = true, true, "smart"
+    equal(Active(s.DDT_DOTS_PLATES_OFFSET), true)
+    equal(Active(s.DDT_DOTS_CURSE_MARKER), true)
+    db.dots.enabled = false
+    -- Children and grandchildren of the tracker's Enable.
+    -- Per-panel rows with a Toolkit that has them (TRACKER_PANEL_OPTIONS), else
+    -- the tracker-wide ones (the CI copy).
+    local perPanel = s.DDT_PANEL_TARGET_HEALTH ~= nil
+    local health = perPanel and "DDT_PANEL_TARGET_HEALTH" or "DDT_DOTS_HEALTH"
+    local function HealthOff()
+        if perPanel then db.dots.panels.target.health = false else db.dots.health = false end
+    end
+    for _, variable in ipairs({"DDT_DOTS_THEME", "DDT_DOTS_PLATES", "DDT_DOTS_PLATES_OFFSET", "DDT_DOTS_CURSE_MODE",
+            "DDT_DOTS_CURSE_MARKER", "DDT_DOTS_ORDER_1", "DDT_DOTS_ONPLATE_CORRUPTION", health,
+            health .. "_TEXT"}) do
+        assert(s[variable], variable)
+        equal(Active(s[variable]), false, variable .. " while the tracker is off")
+    end
+    equal(Active(state.buttonRows["Each DoT: Reset order and colors"]), false, "its Reset")
+    equal(Active(state.buttonRows[perPanel and "Target panel: Reset Target panel" or "Tracker size: Reset size"]), false)
+    equal(Active(s.DDT_DOTS), true, "the switch itself")
+    -- The middle switch off, the top on: the grandchild is greyed too.
+    db.dots.enabled, db.dots.plateDots, db.dots.curseMode = true, false, "last"
+    equal(Active(s.DDT_DOTS_PLATES_OFFSET), false)
+    equal(Active(s.DDT_DOTS_ONPLATE_CORRUPTION), false)
+    equal(Active(s.DDT_DOTS_CURSE_MARKER), false)
+    HealthOff()
+    equal(Active(s[health .. "_TEXT"]), false)
+    -- Damage to come has its own switch; DIES and its place hang on it.
+    db.predict.enabled, db.predict.dies = true, true
+    equal(Active(s.DDT_PREDICT_DIES_X), true)
+    db.predict.enabled = false
+    equal(Active(s.DDT_PREDICT_DIES_X), false)
+    db.predict.enabled, db.predict.dies = true, false
+    equal(Active(s.DDT_PREDICT_DIES_X), false)
+    -- The crowd-control switch: every row (John, 2026-11-27: "disable all
+    -- the functionality, not just the bar"; Toolkit Control.lua: no messages,
+    -- macros deleted).
+    db.control.enabled = false
+    for _, variable in ipairs({"DDT_CONTROL_PLATES", "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE", "DDT_CONTROL_MACROS",
+            "DDT_CONTROL_MARKER_BANISH", "DDT_ANNOUNCE_FEAR", "DDT_ANNOUNCE_SAY"}) do
+        equal(Active(s[variable]), false, variable)
+    end
+    db.control.enabled, db.control.macros = true, false
+    equal(Active(s.DDT_CONTROL_MARKER_BANISH), false, "the marker is the macro's")
+    equal(Active(s.DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE), true)
+end)
+
+test("settings sections, version 3: the top switch on the host's top page, the rest greyed by the chain", function()
+    local state = fixture({before = SectionToolkit})
+    local s, db, prefix = state.settings, state.ddt.db, "DYRE_WARLOCKTOOLSFOREVER__"
+    equal(Host(state, "tracker", "WarlockToolsForever", "Top", "master"), "rows")
+    equal(Host(state, "control", "WarlockToolsForever", "Top", "master"), "rows")
+    equal(Host(state, "dots", "WarlockToolsForever", "Top", "master"), nil, "dots has no single top switch")
+    local top = Prefixed(state, prefix)
+    equal(table.concat(top, ","), prefix .. "DDT_CONTROL," .. prefix .. "DDT_DOTS", "only the two switches")
+    equal(s[prefix .. "DDT_DOTS"].category, "Top")
+    -- Named for the top page, where several AddOns' switches sit together.
+    equal(s[prefix .. "DDT_DOTS"].name, "DoT Tracker", "the section's title")
+    equal(s[prefix .. "DDT_CONTROL"].name, "Crowd Control")
+    equal(s[prefix .. "DDT_CONTROL"].tooltip, s.DDT_CONTROL.tooltip, "the same sentence, no page note")
+    equal(s[prefix .. "DDT_DOTS"].tooltip, s.DDT_DOTS.tooltip)
+    equal(s[prefix .. "DDT_DOTS"].tooltip:find("page", 1, true), nil, "no note on where the settings are")
+    equal(s.DDT_DOTS.name, "Enable DoT tracker", "our own page keeps its label")
+    equal(s.DDT_CONTROL.name, "Enable crowd control")
+    assert(s.DDT_CONTROL.tooltip:find("removes the \"!\" macros from your action bars", 1, true), "says the macros go")
+    assert(s[prefix .. "DDT_CONTROL"].tooltip:find("stops the group messages", 1, true), "says the messages stop")
+    for _, key in ipairs({"tracker", "dots", "control"}) do
+        equal(Host(state, key, "WarlockToolsForever", key, "rest"), "rows", key)
+    end
+    equal(#state.duplicates, 0, table.concat(state.duplicates, ","))
+    equal(s[prefix .. "DDT_DOTS"].category, "Top", "the switch is not drawn again")
+    equal(s[prefix .. "DDT_CONTROL"].category, "Top")
+    -- On the sub-pages, greyed by the chain (the top switch is elsewhere).
+    db.dots.enabled, db.control.enabled = false, false
+    for _, variable in ipairs({"DDT_DOTS_THEME", "DDT_DOTS_CURSE_MARKER", "DDT_DOTS_PLATES_OFFSET",
+            "DDT_CONTROL_PLATES", "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE"}) do
+        equal(Active(s[prefix .. variable]), false, variable)
+    end
+    s[prefix .. "DDT_DOTS"].set(true)
+    equal(Active(s[prefix .. "DDT_DOTS_THEME"]), true, "the top page's switch turns them on")
+    -- A Mage's Polymorph page: the bar's switch alone on MTF's top page.
+    local mage = fixture({before = SectionToolkit, class = "MAGE", className = "Mage",
+        book = {{118, "Polymorph"}, {133, "Fireball"}}})
+    equal(Host(mage, "control", "MageToolsForever", "Top", "master"), "rows")
+    equal(table.concat(Prefixed(mage, "DYRE_MAGETOOLSFOREVER__"), ","), "DYRE_MAGETOOLSFOREVER__DDT_CONTROL")
+    equal(mage.settings.DYRE_MAGETOOLSFOREVER__DDT_CONTROL.name, "Crowd Control")
+    equal(mage.settings.DYRE_MAGETOOLSFOREVER__DDT_CONTROL.tooltip:find("page", 1, true), nil)
+    equal(Host(mage, "control", "MageToolsForever", "Polymorph", "rest"), "rows")
+    equal(#mage.duplicates, 0)
+    -- MTF's Polymorph sub-page with the bar off on the top page: every row and
+    -- the bar's Reset grey (the switch stops the macros and messages too).
+    local ms, mp = mage.settings, "DYRE_MAGETOOLSFOREVER__"
+    mage.ddt.db.control.enabled = false
+    for _, name in ipairs({"SCALE", "WIDTH", "BARHEIGHT", "TEXTSCALE", "OPACITY"}) do
+        equal(Active(ms[mp .. "DYRE_DYRESDEBUFFTRACKER_CONTROL_" .. name]), false, name)
+    end
+    for _, variable in ipairs({"DDT_CONTROL_MACROS", "DDT_CONTROL_MARKER_POLYMORPH", "DDT_ANNOUNCE_POLYMORPH",
+            "DDT_ANNOUNCE_SAY"}) do
+        equal(Active(ms[mp .. variable]), false, variable)
+        assert(Watched(ms[mp .. variable]):find(mp .. "DDT_CONTROL", 1, true), variable .. " watches the top switch")
+    end
+    -- The bar's Reset size (the Toolkit greys it through opts.modify; the CI
+    -- copy's stub greys only the sliders).
+    local reset = mage.buttonRows["Crowd Control: Reset size"]
+    assert(reset, "the bar's Reset size on the host page")
+    if reset.modify then
+        equal(reset.modify(), false, "the bar's Reset size")
+    end
+    mage.ddt.db.control.enabled = true
+    equal(Active(ms[mp .. "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE"]), true)
+    -- Nothing for the class: no top switch either.
+    local paladin = fixture({before = SectionToolkit, class = "PALADIN", className = "Paladin", book = {}})
+    equal(Host(paladin, "tracker", "SomeHost", "Top", "master"), nil)
+    equal(#Prefixed(paladin, "DYRE_SOMEHOST__"), 0)
+end)
+
+test("settings sections, version 2: a part is ignored, the whole section is drawn as before", function()
+    local state = fixture({before = function(s)
+        SectionToolkit(s)
+        s.toolkit.SETTINGS_SECTIONS_VERSION = 2
+    end})
+    equal(Host(state, "tracker", "WarlockToolsForever", "x", "master"), "rows")
+    assert(state.settings.DYRE_WARLOCKTOOLSFOREVER__DDT_DOTS_THEME, "all rows with version 2")
+    assert(state.settings.DYRE_WARLOCKTOOLSFOREVER__DDT_DOTS, "and the switch")
+    equal(#state.duplicates, 0)
+end)
+
+
+test("live greying: every greyed row watches every switch in its chain, on our page and on a host's", function()
+    local state = fixture({before = SectionToolkit})
+    local s = state.settings
+    equal(Watched(s.DDT_DOTS_CURSE_MARKER), "DDT_DOTS,DDT_DOTS_CURSE_MODE", "a grandchild")
+    equal(Watched(s.DDT_DOTS_PLATES_OFFSET), "DDT_DOTS,DDT_DOTS_PLATES")
+    equal(Watched(s.DDT_DOTS_ONPLATE_CORRUPTION), "DDT_DOTS,DDT_DOTS_PLATES")
+    local health = s.DDT_PANEL_TARGET_HEALTH and "DDT_PANEL_TARGET_HEALTH" or "DDT_DOTS_HEALTH"
+    equal(Watched(s[health .. "_TEXT"]), "DDT_DOTS," .. health)
+    equal(Watched(s.DDT_DOTS_THEME), "DDT_DOTS")
+    equal(Watched(s.DDT_PREDICT_DIES_X), "DDT_PREDICT,DDT_PREDICT_DIES", "also the switch it reads")
+    equal(Watched(s.DDT_PREDICT_PLATE_DIES_Y), "DDT_PREDICT,DDT_PREDICT_DIES,DDT_PREDICT_PLATES")
+    equal(Watched(state.buttonRows["Each DoT: Reset order and colors"]), "DDT_DOTS", "a Reset")
+    equal(Watched(s.DDT_CONTROL_MARKER_BANISH), "DDT_CONTROL,DDT_CONTROL_MACROS")
+    equal(Watched(s.DDT_CONTROL_MACROS), "DDT_CONTROL")
+    equal(Watched(s.DDT_ANNOUNCE_SAY), "DDT_CONTROL")
+    equal(Watched(s.DDT_CONTROL_PLATES), "DDT_CONTROL")
+    equal(Watched(s.DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE), "DDT_CONTROL", "the bar's size")
+    equal(Watched(s.DDT_DOTS), "", "a top switch watches nothing")
+    equal(Watched(s.DDT_ANNOUNCE_FEAR), "DDT_CONTROL", "under the crowd-control switch")
+    -- A host's sub-page watches the switch on its top page (the same prefix).
+    local prefix = "DYRE_WARLOCKTOOLSFOREVER__"
+    for _, key in ipairs({"tracker", "control"}) do Host(state, key, "WarlockToolsForever", "Top", "master") end
+    for _, key in ipairs({"tracker", "dots", "control"}) do Host(state, key, "WarlockToolsForever", key, "rest") end
+    equal(Watched(s[prefix .. "DDT_DOTS_THEME"]), prefix .. "DDT_DOTS")
+    equal(Watched(s[prefix .. "DDT_DOTS_CURSE_MARKER"]), prefix .. "DDT_DOTS," .. prefix .. "DDT_DOTS_CURSE_MODE")
+    equal(Watched(s[prefix .. "DDT_DOTS_PLATES"]), prefix .. "DDT_DOTS", "dots on a page of its own")
+    equal(Watched(s[prefix .. "DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE"]), prefix .. "DDT_CONTROL")
+    equal(Watched(s[prefix .. "DDT_CONTROL_PLATES"]), prefix .. "DDT_CONTROL")
+    -- A Mage: Note set watches the chime switch.
+    local mage = Mage({before = function(st)
+        SectionToolkit(st)
+        Sounds(st)
+    end})
+    equal(Watched(mage.settings.DDT_CHILL_NOTESET), "DDT_CHILL_CHIME")
+    equal(Watched(mage.settings.DDT_CHILL_SIZE), "DDT_CHILL")
+    equal(Watched(mage.settings.DDT_FROST_SIZE), "DDT_FROST")
+    -- Without WatchSettings (an older Toolkit): no watch, no error.
+    local old = fixture({before = function(st) st.toolkit.WatchSettings = nil end})
+    equal(Watched(old.settings.DDT_DOTS_CURSE_MARKER), "")
+    equal(Watched(old.settings.DYRE_DYRESDEBUFFTRACKER_CONTROL_SCALE), "")
+end)
+
+test("one name per section: titles registered, pages, and the top-page switches all use it", function()
+    local state = Branded({before = SectionToolkit})
+    local titles = {tracker = "DoT Tracker", dots = "DoTs", control = "Crowd Control", cues = "Debuff Cues"}
+    for key, title in pairs(titles) do
+        equal(state.toolkit.SettingsSectionTitle("DyresDebuffTracker", key), title, key)
+        contains(table.concat(state.pages, "|"), "Debuff Tracker > " .. title)
+    end
+    Host(state, "tracker", "WarlockToolsForever", "Top", "master")
+    Host(state, "control", "WarlockToolsForever", "Top", "master")
+    equal(state.settings.DYRE_WARLOCKTOOLSFOREVER__DDT_DOTS.name, titles.tracker)
+    equal(state.settings.DYRE_WARLOCKTOOLSFOREVER__DDT_CONTROL.name, titles.control)
+end)
+
+test("debuff cues section: the Warlock's Demonic Brand, the Mage's arcs and Winter's Chill; none for others", function()
+    -- Warlock on Forever: the Brand, under its heading, on a host's Procs page.
+    local warlock = Branded({before = SectionToolkit})
+    local prefix = "DYRE_WARLOCKTOOLSFOREVER__"
+    equal(Host(warlock, "cues", "WarlockToolsForever", "Procs", "master"), nil, "no single top switch")
+    equal(Host(warlock, "cues", "WarlockToolsForever", "Procs", "rest"), "rows")
+    assert(warlock.heading("Procs: Debuff Cues"), "its heading on the host's page")
+    for _, variable in ipairs({"DDT_BRAND", "DDT_BRAND_SIZE", "DDT_BRAND_OFFSET"}) do
+        equal(warlock.settings[prefix .. variable].category, "Procs", variable)
+    end
+    equal(warlock.settings[prefix .. "DDT_FROST"], nil, "no Mage cues")
+    equal(#warlock.duplicates, 0)
+    warlock.ddt.db.brand.enabled = false
+    equal(warlock.settings[prefix .. "DDT_BRAND_SIZE"].initializer.modify(), false, "greyed below Show")
+    contains(Watched(warlock.settings[prefix .. "DDT_BRAND_SIZE"]), prefix .. "DDT_BRAND")
+    -- A Warlock where the client has no Demonic Brand (Classic Era): nothing,
+    -- and no page of our own.
+    local era = fixture({before = SectionToolkit})
+    equal(Host(era, "cues", "WarlockToolsForever", "Procs", "rest"), "link")
+    equal(table.concat(era.pages, "|"):find("Debuff Cues", 1, true), nil)
+    -- Mage: the frozen and chilled arcs and Winter's Chill, with the talent note
+    -- shown only while the talent is not known.
+    local mage = Mage({before = function(st) SectionToolkit(st); Sounds(st) end, talents = {}})
+    equal(Host(mage, "cues", "MageToolsForever", "Procs", "rest"), "rows")
+    for _, variable in ipairs({"DDT_FROST", "DDT_FROST_SIZE", "DDT_CHILL", "DDT_CHILL_SIZE", "DDT_CHILL_CHIME"}) do
+        assert(mage.settings["DYRE_MAGETOOLSFOREVER__" .. variable], variable)
+    end
+    equal(#mage.duplicates, 0)
+    -- Not learned: every Winter's Chill row greyed, the tooltip says why; no
+    -- note box (John, 2026-11-27: "only enabled if I have it. Not a generic
+    -- banner"). The frozen and chilled arcs need no talent.
+    equal(#mage.primers, 0, "no banner")
+    local mp = "DYRE_MAGETOOLSFOREVER__"
+    for _, variable in ipairs({"DDT_CHILL", "DDT_CHILL_SIZE", "DDT_CHILL_OFFSET", "DDT_CHILL_CHIME"}) do
+        local row = mage.settings[mp .. variable]
+        equal(row.initializer.modify(), false, variable)
+        contains(row.tooltip(), " Greyed out: you have not learned Winter's Chill yet.")
+    end
+    equal(mage.buttonRows["Preview Winter's Chill: Preview"].modify(), false, "the Preview row too")
+    equal(mage.buttonRows["Reset Winter's Chill: Reset"].modify(), false)
+    equal(mage.settings[mp .. "DDT_FROST"].initializer.modify == nil
+        or mage.settings[mp .. "DDT_FROST"].initializer.modify() == true, true, "the frost arcs need no talent")
+    local learned = Mage({before = function(st) SectionToolkit(st); Sounds(st) end})
+    Host(learned, "cues", "MageToolsForever", "Procs", "rest")
+    local row = learned.settings[mp .. "DDT_CHILL_SIZE"]
+    equal(row.initializer.modify(), true, "learned: active")
+    equal(row.tooltip(), "The size of the arc.", "learned: one sentence")
+    -- The Warlock: Demonic Brand greyed until its talent is known (read as the
+    -- page draws), with the same wording.
+    local talented = false
+    local brand = Branded({before = SectionToolkit, talents = setmetatable({}, {__index = function(_, id)
+        return id == 1293695 and talented or nil end})})
+    Host(brand, "cues", "WarlockToolsForever", "Procs", "rest")
+    local size = brand.settings[prefix .. "DDT_BRAND_SIZE"]
+    brand.ddt.db.brand.enabled = true
+    equal(size.initializer.modify(), false, "not learned: greyed")
+    contains(size.tooltip(), " Greyed out: you have not learned Demonic Brand yet.")
+    equal(brand.buttonRows["Reset Demonic Brand: Reset"].modify(), false)
+    talented = true
+    equal(size.initializer.modify(), true, "learned: active at the next draw")
+    equal(size.tooltip(), "The size of the pentagram.")
+    -- A class with no cues: nothing.
+    local priest = fixture({before = SectionToolkit, class = "PRIEST", className = "Priest", book = {}})
+    equal(Host(priest, "cues", "SomeHost", "Procs", "rest"), "link")
+    equal(#Prefixed(priest, "DYRE_SOMEHOST__"), 0)
+end)
+
+test("greyed button rows grey their label too (Dyre's Toolkit GreyButtonLabel), on our pages and hosts", function()
+    local function Spy(st)
+        SectionToolkit(st)
+        st.greyLabels = {}
+        local real = st.toolkit.GreyButtonLabel
+        st.toolkit.GreyButtonLabel = function(initializer)
+            st.greyLabels[initializer] = true
+            return real and real(initializer) or initializer
+        end
+    end
+    local warlock = Branded({before = Spy})
+    for _, label in ipairs({"Preview Demonic Brand: Preview", "Reset Demonic Brand: Reset",
+            "Each DoT: Reset order and colors"}) do
+        assert(warlock.buttonRows[label], label)
+        equal(warlock.greyLabels[warlock.buttonRows[label]], true, label)
+    end
+    local reset = warlock.buttonRows["Target panel: Reset Target panel"] or warlock.buttonRows["Tracker size: Reset size"]
+    equal(warlock.greyLabels[reset], true, "the tracker's Reset")
+    local mage = Mage({before = function(st) Spy(st); Sounds(st) end})
+    for _, label in ipairs({"Preview Winter's Chill: Preview", "Test the stack chime: Test",
+            "Reset Winter's Chill: Reset"}) do
+        equal(mage.greyLabels[mage.buttonRows[label]], true, label)
+    end
+    -- On a host page too (the rows are made again there).
+    Host(warlock, "cues", "WarlockToolsForever", "Procs", "rest")
+    equal(warlock.greyLabels[warlock.buttonRows["Reset Demonic Brand: Reset"]], true, "host row")
+    -- Without the function (an older Toolkit): no error.
+    local old = Branded({before = function(st) st.toolkit.GreyButtonLabel = nil end})
+    assert(old.buttonRows["Reset Demonic Brand: Reset"], "the row is still made")
+end)
+
+test("Bindings.xml: every binding in the Dyre's AddOns section, the Smart curse name kept", function()
+    local xml = assert(io.open("Bindings.xml", "rb")):read("*a")
+    local count = 0
+    for binding in xml:gmatch("<Binding%s.-/?>") do
+        count = count + 1
+        equal(binding:match('category="([^"]*)"'), "Dyre's AddOns", binding)
+        assert(binding:match('header="DYRESDEBUFFTRACKER"'), "the header stays: " .. binding)
+    end
+    equal(count, 1, "one binding")
+    assert(xml:find('name="CLICK DyresDebuffTrackerSmartCurse:LeftButton"', 1, true), "the saved keys' name")
+    equal(xml:find('category="ADDONS"', 1, true), nil, "not the AddOns section")
 end)
 
 test("the TOC: optional toolkit, per-character settings, and the five files in order", function()

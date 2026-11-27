@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.8.0
+
+### Features
+
+- **Settings in Warlock Tools Forever and Mage Tools Forever**: with Dyre's
+  Toolkit 2.17.0 or later, their DoT Tracker, DoTs, Control, and Polymorph
+  pages show the Debuff Tracker's own settings, not only a button to open
+  them. A change on either page is the same change: both read and write the
+  Debuff Tracker's settings. With an older Toolkit, the pages keep the
+  button. With Dyre's Toolkit's newest sections, the DoT tracker's and the
+  control bar's on/off switches go on their AddOn's top page, named "DoT
+  tracker" and "Control bar" ("Polymorph bar" for a Mage).
+- **Greyed settings**: a setting is greyed while any switch above it is
+  off, not only the one just above it (for example, the smart curse letter
+  while the DoT tracker is off). Reset buttons of a switched-off DoT tracker
+  are greyed too. They grey at once as you flip the switch, not only when
+  the page is opened again (with Dyre's Toolkit 2.17.0 or later).
+
+### Other changes
+
+- **One name per settings page**: the Debuff Tracker's settings now have
+  four pages, "DoT Tracker", "DoTs", "Crowd Control", and "Debuff Cues"
+  (the Mage's frozen, chilled, and Winter's Chill arcs; the Warlock's
+  Demonic Brand). Warlock Tools Forever and Mage Tools Forever use the same
+  names, and show the debuff cues on their "Procs" page.
+- **Debuff cues you have not learned are greyed**: every cue of your class
+  is listed, and its settings are greyed until you learn its talent
+  (Winter's Chill for a Mage, Demonic Brand for a Warlock); the tooltip says
+  so. The buttons now say what they do ("Preview Demonic Brand", "Reset
+  Demonic Brand", "Test the stack chime"), and a greyed button row's label
+  is grey too, as the other rows'.
+- **Crowd control switch turns everything off**: with "Enable crowd
+  control" off (the "Control bar" or "Polymorph bar" switch in Warlock Tools
+  Forever or Mage Tools Forever), the bar is gone, nothing is said to your
+  group, and the control macros ("! Fear", "! Polymorph", ...) are removed
+  from your macros and from your action bars. Turn it on again
+  and the macros come back, but you must put them on your action bars
+  again. Every crowd-control setting is greyed while it is off; a marker is
+  greyed while "Keep the control macros" is off. Needs Dyre's Toolkit
+  2.17.0 or later. The DoT tracker's switch is now "Enable DoT tracker".
+- **"! Curse" has its own switch** (Warlock): "Keep the "! Curse" macro",
+  under Curse slot on the DoTs page. Crowd control's switches no longer
+  touch it. It starts as your "Keep the control macros" setting was.
+- **Key Bindings**: the Smart curse key (Warlock) now shows in the "Dyre's
+  AddOns" section of Options > Key Bindings, with the keys of Dyre's
+  Toolkit, not in the general "AddOns" section. A key you set stays.
+
 ## 1.7.0
 
 ### Features
