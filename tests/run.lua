@@ -280,7 +280,8 @@ local function fixture(options)
                 local before = self.modify
                 self.modify = before and function() return before() and predicate() end or predicate
             end,
-            AddShownPredicate = function(self, predicate) self.shown = predicate end,
+            -- Never called: rows are greyed, never hidden.
+            AddShownPredicate = function() error("AddShownPredicate: grey the row, never hide it", 2) end,
             -- Blizzard's: evaluate the row again when that variable changes.
             AddEvaluateStateCVar = function(self, variable)
                 self.watch = self.watch or {}
@@ -429,6 +430,29 @@ test("a Warlock gets the DoT tracker, the dots, the prediction, and the control 
     equal(toolkit.HealthBars.IsActiveSource("DyresDebuffTracker"), true)
     equal(ddt.KindStatus("dots"), "ours")
     equal(#state.messages, 0, "nothing said at login")
+end)
+
+-- The family rule "listed and greyed, never hidden" (lead, 2026-11-27): a row
+-- that does not apply now is greyed, never hidden by a shown predicate.
+test("no runtime file calls AddShownPredicate (greyed, never hidden)", function()
+    local toc = assert(io.open("DyresDebuffTracker.toc", "rb"))
+    local files = {}
+    for line in toc:lines() do
+        local file = line:match("^%s*([%w_/\\]+%.lua)%s*$")
+        if file then
+            files[#files + 1] = file
+        end
+    end
+    toc:close()
+    assert(#files >= 5, "the TOC lists the runtime files")
+    for _, file in ipairs(files) do
+        local handle = assert(io.open(file, "rb"))
+        local code = handle:read("*a")
+        handle:close()
+        -- Comments may name it; code may not.
+        code = code:gsub("%-%-%[(=*)%[.-%]%1%]", ""):gsub("%-%-[^\n]*", "")
+        equal(code:find("AddShownPredicate", 1, true), nil, file)
+    end
 end)
 
 test("settings pages, one per section, named as the sections; the tracker and crowd control each with a switch", function()
@@ -1079,8 +1103,17 @@ test("WTF parity: colors, order, sizes, panels, and nameplate dots apply and are
     equal(db.dots.sizes.bars.lineHeight, 28, "clamped")
     s.DDT_DOTS_BARS_NAMEPOSITION.set("below")
     equal(db.dots.sizes.bars.namePosition, "below")
-    equal(s.DDT_DOTS_BARS_BARWIDTH.initializer.shown(), true, "Bars sizes show with Bars")
-    equal(s.DDT_DOTS_COMPACT_ICONSIZE.initializer.shown(), false, "Compact's do not")
+    -- Listed and greyed, never hidden: the other look's rows are greyed, and
+    -- grey live when the Theme changes.
+    equal(s.DDT_DOTS_BARS_BARWIDTH.initializer.modify(), true, "Bars sizes are active with Bars")
+    equal(s.DDT_DOTS_COMPACT_ICONSIZE.initializer.modify(), false, "Compact's are greyed")
+    equal(s.DDT_DOTS_COMPACT_NAMEPOSITION.initializer.modify(), false, "and Compact's name position")
+    local watched = table.concat(s.DDT_DOTS_COMPACT_ICONSIZE.initializer.watch or {}, ",")
+    contains(watched, "DDT_DOTS_THEME", "the row watches the Theme")
+    db.dots.theme = "compact"
+    equal(s.DDT_DOTS_COMPACT_ICONSIZE.initializer.modify(), true, "Compact's are active with Compact")
+    equal(s.DDT_DOTS_BARS_BARWIDTH.initializer.modify(), false, "Bars' are greyed")
+    db.dots.theme = "bars"
     local saved = fixture({saved = {dots = {trackerSize = false, sizes = {bars = {barWidth = 400}}}}}).ddt.db.dots
     equal(saved.sizes.bars.barWidth, 400, "kept at login")
     equal(saved.trackerSize, false)

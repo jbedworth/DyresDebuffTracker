@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.3
+
+### Other changes
+
+- On the DoT Tracker page, the size and name position settings for the look you aren't using now show greyed out instead of hidden. Switch the Theme and they light up.
+
 ## 1.8.2
 
 ### Fixes

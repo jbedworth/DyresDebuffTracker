@@ -610,7 +610,7 @@ character knows, at its best rank; none for a spell it does not know.
   Warlock's DoT tracker, prediction, and control bar; MTF stays as it is.
   - Parity: every setting on WTF's DoT Tracker, DoTs, and Control pages has
     a DDT row (the "WTF parity" tests list them): each look's sizes and name
-    position (`DDT_DOTS_<LOOK>_<KEY>`, shown only for the chosen look, with
+    position (`DDT_DOTS_<LOOK>_<KEY>`, greyed unless it is the chosen look, with
     Reset size; a change sets `dots.trackerSize = false`, so no percent
     overwrites them, and Tracker size then shows the nearest percent), the
     plate dots' offset and opacity, each panel's color (`dots.panelColors`,
@@ -710,6 +710,26 @@ character knows, at its best rank; none for a spell it does not know.
 
 - Event-driven only: no polling, no idle OnUpdate.
 - No popups in combat.
+- Never call `AddShownPredicate` on a settings initializer (lead, 2026-11-27;
+  every Dyre's AddOn). The reason is the family rule "listed and greyed,
+  never hidden": a row that does not apply now gets a modify predicate
+  (greyed); a row that never applies to this character (another class, a
+  feature this client lacks) is not added when the page is built. DDT's only
+  use was `ShowFor` (the per-look sizes and name position rows); it is now
+  `ForLook` in Options.lua, a modify predicate, with the Theme variable
+  watched through Nest's `also` so the rows grey live. tests/run.lua fails on
+  any AddShownPredicate in a TOC-listed file (comments stripped), and its mock
+  initializer errors if one is called.
+  Not the cause of the Options search error: typing in the search box
+  ("disc", "name") gives "ADDON FORBIDDEN: IsUserOAuthed()" from Blizzard's
+  Social.lua (the Discord sign-in row; Drasi on CurseForge). It is a Blizzard
+  bug any vertical-layout AddOn settings page triggers: the search reads the
+  data of AddOn rows (tainted, since AddOn code wrote it), then inits its own
+  Discord row in the same execution; canvas pages, such as Ace's, are
+  skipped. John's taint log (2026-11-27) blamed DyresToolkit with no line of
+  ours running during the search, and QuestieTrace gives the same error with
+  every Dyre's AddOn off and no shown predicates. Removing AddShownPredicate
+  did not fix it; John reported it to Blizzard.
 - Never call SetRaidTarget. Marking happens only through `/tm` in macros.
 - Lua 5.1. Never compare, print, or index a value that may be secret; gate
   on APIs, never on the client version.

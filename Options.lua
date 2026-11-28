@@ -176,11 +176,19 @@ local function Switch(initializer, variable)
     return initializer
 end
 
--- Shown only while the chosen look is this one (the list checks it again on
--- each setting change).
-local function ShowFor(initializer, predicate)
-    if initializer and type(initializer.AddShownPredicate) == "function" then
-        initializer:AddShownPredicate(predicate)
+-- Greyed while the chosen look is not this one; the row watches the Theme
+-- variable (Nest's `also`), so it greys live.
+--
+-- Never AddShownPredicate on a settings row: the family rule is "listed and
+-- greyed, never hidden" (lead, 2026-11-27). A row that does not apply now is
+-- greyed; one that never applies to this character is not added. A test fails
+-- on any AddShownPredicate call. Not the cause of the Options search error
+-- "ADDON FORBIDDEN: IsUserOAuthed()": that is a Blizzard bug any
+-- vertical-layout AddOn settings page triggers (John's taint log, 2026-11-27;
+-- QuestieTrace gives it too, with every Dyre's AddOn off).
+local function ForLook(initializer, predicate)
+    if initializer and type(initializer.AddModifyPredicate) == "function" then
+        initializer:AddModifyPredicate(predicate)
     end
     return initializer
 end
@@ -571,18 +579,19 @@ local function PanelSections(category, layout, master, On, Changed, Rebuilt)
                         options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
                             and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
                     end
-                    Nest(ShowFor(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
+                    Nest(ForLook(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
                         SIZE_TIPS[spec.key] or ("This panel's " .. label:lower() .. " in the " .. look .. " look.")),
-                        spec), "dots"), ThisLook), master, On)
+                        spec), "dots"), ThisLook), master, On, {"DDT_DOTS_THEME"})
                 end
             end
             local positions = {}
             for _, position in ipairs(DDT.NAME_POSITIONS[theme]) do
                 positions[#positions + 1] = {position, NAME_POSITION_LABELS[position]}
             end
-            Nest(ShowFor(OnlyWhenOurs(Choice(category, id .. theme:upper() .. "_NAMEPOSITION", "Name position", Sizes,
+            Nest(ForLook(OnlyWhenOurs(Choice(category, id .. theme:upper() .. "_NAMEPOSITION", "Name position", Sizes,
                 "namePosition", DDT.DEFAULT_NAME_POSITION[theme], positions,
-                "Where the mob's name sits in this panel's rows.", Rebuilt), "dots"), ThisLook), master, On)
+                "Where the mob's name sits in this panel's rows.", Rebuilt), "dots"), ThisLook), master, On,
+                {"DDT_DOTS_THEME"})
         end
         local function PanelColors() return DDT.db.dots.panelColors end
         local function PanelOpacity() return DDT.db.dots.panelOpacity end
@@ -704,18 +713,18 @@ local function TrackerSection(category, layout, ctx)
                     options:SetLabelFormatter(MinimalSliderWithSteppersMixin.Label.Right, spec.key == "textScale"
                         and function(value) return string.format("%d%%", value) end or DDT.WholeLabel)
                 end
-                Nest(ShowFor(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
+                Nest(ForLook(OnlyWhenOurs(DefaultTick(Settings.CreateSlider(category, setting, options,
                     SIZE_TIPS[spec.key] or ("The DoT tracker's " .. label:lower() .. " in the " .. look .. " look.")),
-                    spec), "dots"), ThisLook), master, On)
+                    spec), "dots"), ThisLook), master, On, {"DDT_DOTS_THEME"})
             end
         end
         local positions = {}
         for _, key in ipairs(DDT.NAME_POSITIONS[theme]) do
             positions[#positions + 1] = {key, NAME_POSITION_LABELS[key]}
         end
-        Nest(ShowFor(OnlyWhenOurs(Choice(category, "DDT_DOTS_" .. theme:upper() .. "_NAMEPOSITION", "Name position",
+        Nest(ForLook(OnlyWhenOurs(Choice(category, "DDT_DOTS_" .. theme:upper() .. "_NAMEPOSITION", "Name position",
             Sizes, "namePosition", DDT.DEFAULT_NAME_POSITION[theme], positions,
-            "Where the mob's name sits in each row.", Rebuilt), "dots"), ThisLook), master, On)
+            "Where the mob's name sits in each row.", Rebuilt), "dots"), ThisLook), master, On, {"DDT_DOTS_THEME"})
     end
     Greyed(Button(layout, "Tracker size", "Reset size", function()
         local dots = DDT.db.dots
