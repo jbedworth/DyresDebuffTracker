@@ -959,14 +959,12 @@ end
 -- "cues": this AddOn's own marks on enemy nameplates for a debuff (the
 -- Mage's frozen, chilled, and Winter's Chill arcs; the Warlock's Demonic
 -- Brand). Hosts draw it on their "Procs" page (John, 2026-11-27: "add all
--- the Warlock procs/alerts"), so it starts with its heading there. No single
--- top switch: each cue has its own Show.
+-- the Warlock procs/alerts"). Each cue has its own heading, also there (no
+-- "Debuff Cues" heading above them: John, 2026-11-27). No single top switch:
+-- each cue has its own Show.
 local function CuesSection(category, layout, ctx)
     if Part(ctx) == "master" or (ctx.class ~= nil and ctx.class ~= DDT.class) or not HasCues() then
         return false
-    end
-    if not ctx.own then
-        Heading(layout, TITLES.cues)
     end
     FrostSection(category, layout)
     ChillSection(category, layout)

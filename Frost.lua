@@ -307,6 +307,21 @@ local function CreateArcs(toolkit, store, spec)
         return not toolkit.IsSecret(canAttack) and canAttack == true
     end
 
+    -- Only a hostile mob's own nameplate ("nameplate1" ...): never your own
+    -- plate, the settings page's preview plate, or a friendly unit's. Our
+    -- frame on those plates tainted Blizzard's nameplate code (John, 2026-11-27:
+    -- secret-value errors from Options > Nameplates and the player's cast bar).
+    local function Eligible(unit)
+        if type(unit) ~= "string" or not unit:match("^nameplate%d+$") then
+            return false
+        end
+        local isPlayer = UnitIsUnit(unit, "player")
+        if toolkit.IsSecret(isPlayer) or isPlayer then
+            return false
+        end
+        return IsHostile(unit)
+    end
+
     -- On the bar showing the plate's health (a plate AddOn's, else Blizzard's), else on the plate.
     local function Place(holder, plate, unit)
         local settings = store()
@@ -336,7 +351,7 @@ local function CreateArcs(toolkit, store, spec)
     end
 
     local function Attach(unit)
-        if not On() then
+        if not On() or not Eligible(unit) then
             return
         end
         local plate = C_NamePlate.GetNamePlateForUnit(unit)
@@ -351,7 +366,7 @@ local function CreateArcs(toolkit, store, spec)
         arcs.byUnit[unit] = holder
         holder.container:SetUnit(unit)
         holder.container:UpdateAllAuras()
-        holder:SetShown(IsHostile(unit))
+        holder:Show()
     end
 
     -- Out of combat: holders made ahead, so a plate in combat seldom makes one.
@@ -496,16 +511,21 @@ local function CreateArcs(toolkit, store, spec)
             end
         elseif event == "PLAYER_TARGET_CHANGED" or event == "PLAYER_LOGOUT" then
             arcs:StopPreview()
-        elseif event == "UNIT_FLAGS" then
-            local holder = not toolkit.IsSecret(unit) and arcs.byUnit[unit]
-            if holder then
-                holder:SetShown(IsHostile(unit))
+        elseif event == "UNIT_FLAGS" or event == "UNIT_FACTION" then
+            -- A unit that turns hostile gets its arcs; one that stops being
+            -- hostile loses them.
+            if not toolkit.IsSecret(unit) and type(unit) == "string" and unit:match("^nameplate%d+$") then
+                if arcs.byUnit[unit] and not Eligible(unit) then
+                    Detach(unit)
+                elseif not arcs.byUnit[unit] and Eligible(unit) then
+                    Attach(unit)
+                end
             end
         elseif event == "PLAYER_REGEN_ENABLED" then
             arcs:Prewarm()
         end
     end)
-    for _, event in ipairs({"NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FLAGS",
+    for _, event in ipairs({"NAME_PLATE_UNIT_ADDED", "NAME_PLATE_UNIT_REMOVED", "UNIT_FLAGS", "UNIT_FACTION",
         "PLAYER_REGEN_ENABLED", "PLAYER_TARGET_CHANGED", "PLAYER_LOGOUT"}) do
         events:RegisterEvent(event)
     end

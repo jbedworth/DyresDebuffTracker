@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.8.1
+
+### Fixes
+
+- Changing a setting on Options > Nameplates, or casting with your own nameplate showing, no longer gives "secret value" errors that name Dyre's Debuff Tracker. The Demonic Brand pentagram and the Mage's frost arcs now go only on enemy nameplates, never on your own nameplate, a friendly one, or the settings page's preview nameplate. A mob that turns hostile gets them at once.
+- On the Procs page of Warlock Tools Forever and Mage Tools Forever, each debuff cue now has just its own heading, like "Demonic Brand". The empty "Debuff Cues" heading above it is gone.
+
 ## 1.8.0
 
 ### Features

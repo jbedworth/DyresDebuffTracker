@@ -110,7 +110,7 @@ over, your bar's settings are copied here once.
   Mage's armor chill also shows the arc.
 - A mob that is both shows both, Frozen above. The game draws the arcs, so
   they work in combat.
-- On by default for Mages. "Frozen and chilled" on the DoTs page: on or
+- On by default for Mages. "Frozen and chilled" on the Debuff Cues page: on or
   off, **Arc height** (0 to 60 pixels above the health bar), and **Arc
   size** (50% to 200%). They sit on the bar of Plater, Threat Plates, and
   the other nameplate AddOns that Dyre's Toolkit knows.
@@ -125,7 +125,7 @@ over, your bar's settings are copied here once.
 - Only your own Winter's Chill shows, and only while you know the Winter's
   Chill talent (any rank): without it, no arc and no chime, and the rows
   are greyed. **Preview** still works.
-- On by default for Mages. "Winter's Chill" on the DoTs page: **Show**,
+- On by default for Mages. "Winter's Chill" on the Debuff Cues page: **Show**,
   **Size** (50% to 200%, default 100%), **Height above nameplate** (0 to 60
   pixels, default 36, above the frozen and chilled arcs), **Preview**, and
   **Reset Winter's Chill**. Changes apply at once.
@@ -134,7 +134,7 @@ over, your bar's settings are copied here once.
   Height. Press it again, change target, or log out to end it.
 - On Classic Era the segments count stacks with Dyre's Toolkit 2.11.0 or
   later; with an older Toolkit only the first segment turns white.
-- **Stack chime**, with **Note set** (Bassoon or Sax) and **Test chime**.
+- **Stack chime**, with **Note set** (Bassoon or Sax) and **Test the stack chime**.
   On by default; it needs Dyre's Sounds.
   - Classic Era: a note as each stack goes on, rising from 1 to 4, and a
     held high note at 5. Only your own Winter's Chill on your target
@@ -155,8 +155,8 @@ over, your bar's settings are copied here once.
   goes.
 - Only your own Brand shows. Another Warlock's Brand helps only their
   demon.
-- On by default for Warlocks on WoW: Forever. "Demonic Brand" on the DoTs
-  page: **Show**, **Size** (50% to 200%, default 100%), **Height above
+- On by default for Warlocks on WoW: Forever. "Demonic Brand" on the Debuff
+  Cues page: **Show**, **Size** (50% to 200%, default 100%), **Height above
   nameplate** (0 to 60 pixels, default 10), **Preview**, and **Reset
   Demonic Brand**. Changes apply at once.
 - **Preview** (or `/ddt preview brand`): the pentagram on your target's
@@ -186,15 +186,18 @@ Tools Forever's and Mage Tools Forever's. **Not yet checked in game:** every
 other class spell above, its spell IDs, and its durations. TESTING.md lists
 what is still to check.
 
-A class Tools AddOn wins for its own class: with Warlock Tools Forever or
-Mage Tools Forever on, that AddOn shows its class's trackers, and this
-AddOn's pages say so.
+Warlock Tools Forever and Mage Tools Forever show this AddOn's settings on
+their own pages (with Dyre's Toolkit 2.17.0 or later); a change there is the
+same change here. Only a very old Warlock Tools Forever (1.4.1 or older) or Mage
+Tools Forever (1.2.3 or older), which still has its own trackers, keeps them
+for its class, and this AddOn's pages say so.
 
 ## Commands
 
 - `/ddt`: the settings (also under Options > AddOns > Dyre's AddOns >
-  Debuff Tracker). Two pages, **DoTs** and **Crowd control**, each with its
-  own Enable.
+  Debuff Tracker). Four pages, **DoT Tracker**, **DoTs**, **Crowd
+  Control**, and **Debuff Cues** (the last only for a class with cues).
+  The DoT tracker and crowd control each have their own Enable.
 - `/ddt reset`: the frames go back to their default places.
 - `/ddt reset_focus`: checks the focus target again for all of Dyre's
   AddOns.

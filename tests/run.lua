@@ -1826,9 +1826,9 @@ test("frozen and chilled arcs on Forever: one HARMFUL slot each, a set, nothing 
     plate.UnitFrame = {healthBar = other}
     for _, timer in ipairs(state.timers) do timer() end
     equal(holder.point[2], other, "placed again on the newer bar")
-    -- A friendly unit: hidden. UNIT_FLAGS follows a change.
+    -- A friendly unit: no holder on its plate. UNIT_FLAGS follows a change.
     AddPlate(state, "nameplate2", false)
-    equal(arcs.byUnit.nameplate2.shown, false)
+    equal(arcs.byUnit.nameplate2, nil)
     state.hostile.nameplate2 = true
     emit(state, "UNIT_FLAGS", "nameplate2")
     equal(arcs.byUnit.nameplate2.shown, true)
@@ -1855,7 +1855,7 @@ test("frozen and chilled arcs in /ddt debug: plates, shown, visible, anchors; ne
     AddPlate(state, "nameplate1")
     AddPlate(state, "nameplate2", false)
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
-    equal(state.said("frost on=true engine=engine holders=10 plates=2 shown=1 visible=1 anchors=[Blizzard=2]"),
+    equal(state.said("frost on=true engine=engine holders=10 plates=1 shown=1 visible=1 anchors=[Blizzard=1]"),
         true, "one line for the arcs")
     equal(state.auraReads, 0, "the line reads no aura")
     state.settings.DDT_FROST.set(false)
@@ -1949,6 +1949,55 @@ local function ReadTGA(name)
     local data = assert(io.open("Textures/" .. name .. ".tga", "rb")):read("*a")
     return data, data:byte(13) + data:byte(14) * 256, data:byte(15) + data:byte(16) * 256
 end
+
+test("arcs only on a hostile mob's nameplate: never your own plate, the settings preview plate, or a friendly one", function()
+    local state = Mage()
+    local arcs = state.ddt.frostArcs
+    local env = state.env
+    -- Your own nameplate (the personal plate): no holder, also if it reads as attackable.
+    env.UnitIsUnit = function(a, b) return a == "nameplate5" and b == "player" end
+    local own = AddPlate(state, "nameplate5", true)
+    equal(arcs.byUnit.nameplate5, nil, "no holder on your own plate")
+    for _, holder in ipairs(arcs.all) do
+        assert(holder.parent ~= own, "nothing parented to your own plate")
+    end
+    emit(state, "UNIT_FLAGS", "nameplate5")
+    equal(arcs.byUnit.nameplate5, nil, "UNIT_FLAGS does not attach it either")
+    -- Options > Nameplates' preview plate: not a "nameplateN" token.
+    local preview = AddPlate(state, "preview", true)
+    equal(arcs.byUnit.preview, nil, "no holder on the settings preview plate")
+    for _, holder in ipairs(arcs.all) do
+        assert(holder.parent ~= preview, "nothing parented to the preview plate")
+    end
+    emit(state, "UNIT_FACTION", "preview")
+    equal(arcs.byUnit.preview, nil)
+    -- A friendly unit: none; it gets one when it turns hostile (UNIT_FACTION),
+    -- and loses it when it stops being hostile.
+    local friend = AddPlate(state, "nameplate6", false)
+    equal(arcs.byUnit.nameplate6, nil, "no holder on a friendly plate")
+    state.hostile.nameplate6 = true
+    emit(state, "UNIT_FACTION", "nameplate6")
+    assert(arcs.byUnit.nameplate6, "attached once hostile")
+    equal(arcs.byUnit.nameplate6.parent, friend)
+    state.hostile.nameplate6 = false
+    emit(state, "UNIT_FACTION", "nameplate6")
+    equal(arcs.byUnit.nameplate6, nil, "detached when no longer hostile")
+    -- A settings change attaches again only where it may.
+    state.hostile.nameplate7 = true
+    AddPlate(state, "nameplate7", true)
+    arcs:Refresh()
+    equal(arcs.byUnit.nameplate5, nil)
+    equal(arcs.byUnit.nameplate6, nil)
+    assert(arcs.byUnit.nameplate7, "a hostile mob keeps its arcs")
+    -- The Warlock's Demonic Brand runs the same code.
+    local warlock = Branded()
+    assert(warlock.ddt.brandArcs, "a Warlock on Forever has the pentagram")
+    warlock.env.UnitIsUnit = function(a, b) return a == "nameplate1" and b == "player" end
+    AddPlate(warlock, "nameplate1", true)
+    equal(warlock.ddt.brandArcs.byUnit.nameplate1, nil, "no pentagram holder on your own plate")
+    AddPlate(warlock, "nameplate2", true)
+    assert(warlock.ddt.brandArcs.byUnit.nameplate2, "the pentagram on a hostile mob")
+end)
 
 test("Demonic Brand pentagram: Warlocks where the client knows it; Show, Size, Height, Reset; repaired", function()
     local state = Branded()
@@ -2060,7 +2109,7 @@ test("Demonic Brand pentagram on Forever: one HARMFUL|PLAYER slot of 1293696, a 
     equal(pulse.animations[1].from, 0.45)
     equal(pulse.animations[1].to, 1)
     AddPlate(state, "nameplate2", false)
-    equal(arcs.byUnit.nameplate2.shown, false, "a friendly unit: hidden")
+    equal(arcs.byUnit.nameplate2, nil, "a friendly unit: no holder")
     -- The plate goes: the holder lets go, hides, and goes back to the pool.
     RemovePlate(state, "nameplate1")
     equal(holder.container.unit, "none")
@@ -2069,7 +2118,7 @@ test("Demonic Brand pentagram on Forever: one HARMFUL|PLAYER slot of 1293696, a 
     equal(arcs.byUnit.nameplate1, nil)
     equal(state.auraReads, 0, "no AddOn code reads an aura")
     state.env.SlashCmdList.DYRESDEBUFFTRACKER("debug")
-    equal(state.said("brand on=true engine=engine holders=10 plates=1 shown=0 visible=0 anchors=[Blizzard=1]"), true)
+    equal(state.said("brand on=true engine=engine holders=10 plates=0 shown=0 visible=0 anchors=[]"), true)
     equal(state.said("frost none (Mage only)"), true)
     -- No OnUpdate anywhere: the pulse is the client's animation.
     local text = assert(io.open("Frost.lua", "rb")):read("*a")
@@ -3529,7 +3578,10 @@ test("debuff cues section: the Warlock's Demonic Brand, the Mage's arcs and Wint
     local prefix = "DYRE_WARLOCKTOOLSFOREVER__"
     equal(Host(warlock, "cues", "WarlockToolsForever", "Procs", "master"), nil, "no single top switch")
     equal(Host(warlock, "cues", "WarlockToolsForever", "Procs", "rest"), "rows")
-    assert(warlock.heading("Procs: Debuff Cues"), "its heading on the host's page")
+    -- Only each cue's own heading on a host's page: no "Debuff Cues" heading
+    -- with nothing under it but another heading (John, 2026-11-27).
+    equal(warlock.heading("Procs: Debuff Cues"), nil, "no section heading on the host's page")
+    assert(warlock.heading("Procs: Demonic Brand"), "the cue's own heading on the host's page")
     for _, variable in ipairs({"DDT_BRAND", "DDT_BRAND_SIZE", "DDT_BRAND_OFFSET"}) do
         equal(warlock.settings[prefix .. variable].category, "Procs", variable)
     end
@@ -3547,6 +3599,14 @@ test("debuff cues section: the Warlock's Demonic Brand, the Mage's arcs and Wint
     -- shown only while the talent is not known.
     local mage = Mage({before = function(st) SectionToolkit(st); Sounds(st) end, talents = {}})
     equal(Host(mage, "cues", "MageToolsForever", "Procs", "rest"), "rows")
+    equal(mage.heading("Procs: Debuff Cues"), nil, "no section heading on MTF's page")
+    assert(mage.heading("Procs: Frozen and chilled"), "the frost cue's own heading")
+    assert(mage.heading("Procs: Winter's Chill"), "Winter's Chill's own heading")
+    -- Our own page is the same as before: its cue headings, and no extra
+    -- "Debuff Cues" heading row on it.
+    assert(mage.heading("Debuff Cues: Frozen and chilled"))
+    assert(mage.heading("Debuff Cues: Winter's Chill"))
+    equal(mage.heading("Debuff Cues: Debuff Cues"), nil)
     for _, variable in ipairs({"DDT_FROST", "DDT_FROST_SIZE", "DDT_CHILL", "DDT_CHILL_SIZE", "DDT_CHILL_CHIME"}) do
         assert(mage.settings["DYRE_MAGETOOLSFOREVER__" .. variable], variable)
     end
