@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.2
+
+### Fixes
+
+- I don't use Fear much, so I missed these. When a feared mob runs out of range, its bar no longer drops to just the mob's name. The time left keeps counting down next to the name, like "~6 s", until the mob is back in range. The "~" is there because damage can break Fear early, and the game doesn't tell me while the mob is out of sight. On Classic Era this works for every crowd-control spell. On WoW: Forever it's Fear for now.
+- A Fear bar now goes when that Fear's time is up, and your focus's Fear no longer shows twice (in the Focus box and on a bar).
+- These need Dyre's Toolkit 2.18.2.
+
 ## 1.8.1
 
 ### Fixes

@@ -299,7 +299,9 @@ local function CreateControl()
     local focusKey = FocusBoxKey(spells)
     local tracker, missing = toolkit.CreateControlTracker({addon = addonName, priority = DDT.PRIORITY,
         class = DDT.class, store = db.control, parent = widget, rows = rows, look = DDT.ControlLook,
-        find = own.find, lock = own.lock, focusLock = own.focusLock, countdown = own.countdown,
+        -- The time left as text while no unit shows the mob, for every class
+        -- (John, 2026-11-27: a feared mob out of range kept only its name).
+        find = own.find, lock = own.lock, focusLock = own.focusLock, countdown = own.countdown ~= false,
         clickThrough = own.clickThrough, fixedClick = own.fixedClick,
         names = {row = DDT.NAMES.controlRow, click = DDT.NAMES.controlClick,
             focus = focusKey and DDT.NAMES.controlFocus or nil},

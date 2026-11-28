@@ -603,6 +603,52 @@ test("Hamstring and Entangling Roots on two mobs give two crowd-control bars", f
     end
 end)
 
+-- John, DDT 1.8.1 on Forever (2026-11-27): "no matter how many different mobs
+-- I fear, the timer says the same number", and "when the mob runs out of
+-- range (inevitable), it just shows the mobs name, loses all info about the
+-- mob". Fear is on several mobs at once (John: "It's always multi-cast"); it
+-- counts down from the cast (Dyre's Toolkit 2.18.2); DDT turns the countdown
+-- on for every class.
+test("a Warlock's Fear: a row per feared mob, and a mob out of range counts down", function()
+    local state = fixture()
+    local env, units = state.env, {}
+    env.UnitExists = function(unit) return units[unit] ~= nil end
+    env.UnitGUID = function(unit) return unit == "player" and "Player-1" or (units[unit] and units[unit].guid) end
+    env.UnitName = function(unit) return units[unit] and units[unit].name end
+    env.UnitCanAttack = function(_, unit) return units[unit] ~= nil end
+    local ddt = state.ddt
+    ddt.toolkit.NoteFocusWorks()
+    local tracker = ddt.controlTracker
+    assert(tracker, "a Warlock has a control bar")
+    if not ddt.toolkit.CONTROL_CAST_COUNTDOWN then
+        -- The tests/toolkit copy predates 2.18.2; ../DyresToolkit has it.
+        assert(TOOLKIT == "tests/toolkit/", "CONTROL_CAST_COUNTDOWN must be in ../DyresToolkit")
+        return
+    end
+    local function Fear(guid, name, castGUID)
+        units.target = {guid = guid, name = name}
+        emit(state, "PLAYER_TARGET_CHANGED")
+        emit(state, "UNIT_SPELLCAST_SENT", "player", name, castGUID, 5782)
+        emit(state, "UNIT_SPELLCAST_SUCCEEDED", "player", castGUID, 5782)
+    end
+    Fear("Creature-1", "Greymist Coastrunner", "cast-1")
+    state.now = state.now + 3
+    Fear("Creature-2", "Greymist Raider", "cast-2")
+    local held = {}
+    for _, row in ipairs(tracker.rows) do
+        if row.guid then held[#held + 1] = row.guid end
+    end
+    equal(table.concat(held, ","), "Creature-1,Creature-2", "a row for each feared mob")
+    local row = tracker.rows[2]
+    equal(row.boundUnit, "target")
+    equal(tracker.rows[1].boundUnit, "none", "the first mob is on no unit: never the new target")
+    state.now = state.now + 4
+    units.target = nil
+    emit(state, "PLAYER_TARGET_CHANGED")
+    equal(row.boundUnit, "none", "no unit shows the feared mob")
+    equal(row.name.text, "Greymist Raider  |cff999999" .. "~6 s|r", "Fear rank 1 is 10 s, cast 4 s ago; an estimate")
+end)
+
 test("a Druid's Entangling Roots is in the DoT tracker and on the crowd-control bar", function()
     local state = fixture({class = "DRUID", className = "Druid", book = {{339, "Entangling Roots"}}})
     local ddt = state.ddt
