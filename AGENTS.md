@@ -731,6 +731,14 @@ character knows, at its best rank; none for a spell it does not know.
   every Dyre's AddOn off and no shown predicates. Removing AddShownPredicate
   did not fix it; John reported it to Blizzard.
 - Never call SetRaidTarget. Marking happens only through `/tm` in macros.
+- Never RegisterEvent or UnregisterEvent COMBAT_LOG_EVENT_UNFILTERED where the
+  log is restricted (WoW: Forever): both are forbidden to AddOns (John,
+  2026-11-28: a profile switch on a Warlock gave "tried to call the protected
+  function 'Frame:UnregisterEvent()'" from Chime.lua's RefreshChillChime,
+  which the profile refresh calls for every class). Chime.lua touches the log
+  only on the "log" path and unregisters only what it registered
+  (`chime.logRegistered`, `ReleaseLog`). The test mock errors on either call
+  with `restricted = true`.
 - Lua 5.1. Never compare, print, or index a value that may be secret; gate
   on APIs, never on the client version.
 - One package for both clients: `## Interface: 16001, 11509` (WoW: Forever

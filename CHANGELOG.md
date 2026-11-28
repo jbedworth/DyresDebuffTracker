@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.4
+
+### Fixes
+
+- On WoW: Forever, switching to another Dyre's Toolkit profile no longer gives an "ADDON_ACTION_FORBIDDEN" error that names Dyre's Debuff Tracker.
+
 ## 1.8.3
 
 ### Other changes

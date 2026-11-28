@@ -62,9 +62,17 @@ local function newFrame(state, kind, name, parent, template)
     function frame:IsVisible() return self.shown end
     function frame:SetAttribute(key, value) self.attributes[key] = value end
     function frame:GetAttribute(key) return self.attributes[key] end
-    function frame:RegisterEvent(event) self.events[event] = true end
+    -- Where the combat log is restricted (WoW: Forever), the client forbids
+    -- an AddOn to register or unregister it (ADDON_ACTION_FORBIDDEN).
+    local function Forbidden(event, call)
+        if state.restricted and event == "COMBAT_LOG_EVENT_UNFILTERED" then
+            state.forbidden[#state.forbidden + 1] = call
+            error("ADDON_ACTION_FORBIDDEN: Frame:" .. call .. "()", 3)
+        end
+    end
+    function frame:RegisterEvent(event) Forbidden(event, "RegisterEvent"); self.events[event] = true end
     function frame:RegisterUnitEvent(event) self.events[event] = true end
-    function frame:UnregisterEvent(event) self.events[event] = nil end
+    function frame:UnregisterEvent(event) Forbidden(event, "UnregisterEvent"); self.events[event] = nil end
     function frame:UnregisterAllEvents() self.events = {} end
     function frame:SetScript(script, callback) self.scripts[script] = callback end
     function frame:GetScript(script) return self.scripts[script] end
@@ -163,7 +171,8 @@ end
 local function fixture(options)
     options = options or {}
     local state = {messages = {}, frames = {}, named = {}, macros = {}, settings = {}, pages = {}, headings = {},
-        timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0, duplicates = {}, primers = {}}
+        timers = {}, now = 100, containers = {}, containerCombat = {}, auraReads = 0, duplicates = {}, primers = {},
+        restricted = options.restricted == true, forbidden = {}}
     local env = setmetatable({}, {__index = _G})
     env._G = env
     state.env = env
@@ -3043,6 +3052,48 @@ test("Winter's Chill chime on WoW: Forever: older Dyre's Sounds, none, an old Dy
     -- Not a Mage: nothing.
     local warlock = fixture({restricted = true, before = function(st) Sounds(st); AuraApi(st) end})
     equal(AuraRegistered(warlock), "")
+end)
+
+-- John, 2026-11-28, on WoW: Forever: switching to a profile gave
+-- "tried to call the protected function 'Frame:UnregisterEvent()'" from
+-- RefreshChillChime, through the profile refresh, on a Warlock.
+test("the combat log is never registered or unregistered without the log path (profile refresh, settings, talents)", function()
+    local state = fixture({restricted = true})
+    local ddt = state.ddt
+    equal(ddt.ChillChimeMode(), nil, "a Warlock has no chime path")
+    local ns = state.toolkitNS
+    ns.db.profiles["Paladin - Realm"] = {class = "Paladin", parts = {DyresDebuffTracker = {dots = {hideEmpty = true}}},
+        pending = {}}
+    equal(ns.profile:CopyFrom("Paladin - Realm"), true)
+    equal(ddt.db.dots.hideEmpty, true, "the profile applied")
+    ddt.RefreshChill()
+    ddt.RefreshChillChime()
+    equal(table.concat(state.forbidden, ","), "", "a Warlock on Forever: no combat log call")
+    -- A Mage on Forever with no aura sounds, and with them: the same.
+    for _, before in ipairs({function(st) Sounds(st) end, function(st) Sounds(st); AuraApi(st) end}) do
+        local mage = Mage({restricted = true, before = before})
+        mage.ddt.db.wintersChill.chime = false
+        mage.ddt.RefreshChillChime()
+        mage.ddt.db.wintersChill.chime = true
+        mage.ddt.RefreshChillChime()
+        mage.ddt.RefreshChill()
+        equal(table.concat(mage.forbidden, ","), "", "a Mage on Forever: no combat log call")
+    end
+    -- Classic Era: the chime off takes back only what it registered, once.
+    local era = Mage({before = function(st) Sounds(st) end})
+    local calls = {}
+    local events = era.ddt.chillChime.events
+    local unregister = events.UnregisterEvent
+    events.UnregisterEvent = function(self, event)
+        calls[#calls + 1] = event
+        return unregister(self, event)
+    end
+    equal(ChimeOn(era), true)
+    era.ddt.db.wintersChill.chime = false
+    era.ddt.RefreshChillChime()
+    era.ddt.RefreshChillChime()
+    equal(ChimeOn(era), false)
+    equal(table.concat(calls, ","), CLEU .. ",SPELLS_CHANGED", "unregistered once")
 end)
 
 test("Winter's Chill chime: waits while Dyre's Buff Reminders older than 1.13.3 still plays its own", function()

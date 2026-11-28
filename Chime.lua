@@ -301,6 +301,19 @@ chime.events:SetScript("OnEvent", function(_, event)
     DDT.PlayChillNote(note, "Winter's Chill " .. stack)
 end)
 
+-- Takes the combat log back, only when we registered it. Where the log is
+-- restricted (WoW: Forever), RegisterEvent and UnregisterEvent of it are both
+-- forbidden to AddOns ("tried to call the protected function
+-- 'Frame:UnregisterEvent()'", John, 2026-11-28, from a profile refresh), so
+-- the log is touched only on the log path, and only what we registered.
+local function ReleaseLog()
+    if chime.logRegistered then
+        chime.events:UnregisterEvent(CLEU)
+        chime.events:UnregisterEvent("SPELLS_CHANGED")
+        chime.logRegistered = false
+    end
+end
+
 -- Registers the combat log (log path) or the aura sounds (aura path) while
 -- the chime can and should play, else not.
 function DDT.RefreshChillChime()
@@ -308,6 +321,9 @@ function DDT.RefreshChillChime()
     -- Only with the Winter's Chill talent (DDT.ChillTalentKnown; unreadable counts as known).
     local wanted = mode ~= nil and type(DDT.db) == "table" and DDT.db.wintersChill.chime == true
         and DDT.ChillTalentKnown()
+    if mode ~= "log" then
+        ReleaseLog()
+    end
     if mode == "aura" then
         for _, event in ipairs({"PLAYER_REGEN_ENABLED", "ADDON_RESTRICTION_STATE_CHANGED"}) do
             if EventValid(event) then
@@ -321,11 +337,13 @@ function DDT.RefreshChillChime()
     if on then
         chime.player = UnitGUID("player")
         ReadName()
-        chime.events:RegisterEvent(CLEU)
-        chime.events:RegisterEvent("SPELLS_CHANGED")
+        if not chime.logRegistered then
+            chime.events:RegisterEvent(CLEU)
+            chime.events:RegisterEvent("SPELLS_CHANGED")
+            chime.logRegistered = true
+        end
     else
-        chime.events:UnregisterEvent(CLEU)
-        chime.events:UnregisterEvent("SPELLS_CHANGED")
+        ReleaseLog()
     end
     chime.registered = on == true
     return chime.registered
