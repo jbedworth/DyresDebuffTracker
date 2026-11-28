@@ -746,10 +746,51 @@ test("the saved settings are repaired: bad values give the defaults, good ones s
     equal(db.control.announce.fear, true)
     equal(db.control.announce.banish, false)
     contains(db.control.texts.banish, "Banish on >> %T << %M")
-    equal(db.control.texts.howl, "Howl of Terror! - via Dyre's Debuff Tracker")
+    equal(db.control.texts.howl, "Howl of Terror!")
     equal(db.control.scale, 50)
     equal(db.macrosOwned["! Fear"], true)
     equal(db.macrosOwned.bad, nil)
+end)
+
+-- John, 2026-11-28: no AddOn name in any default message (a WTF player
+-- uninstalled over messages that "advertised the addon"; "Yes, use them").
+test("group messages: no AddOn name in any default; old defaults with a credit become the new ones", function()
+    local state = fixture()
+    local ddt = state.ddt
+    local spells = {}
+    for _, spell in ipairs(ddt.classData.control or {}) do
+        spells[#spells + 1] = spell
+    end
+    assert(#spells >= 4, "the Warlock's crowd-control spells")
+    for _, className in ipairs({"WARLOCK", "MAGE", "PRIEST", "DRUID", "ROGUE", "HUNTER", "PALADIN", "WARRIOR"}) do
+        local data = ddt.toolkit.ClassSpells and ddt.toolkit.ClassSpells(className)
+        for _, spell in ipairs(type(data) == "table" and data.control or {}) do
+            spells[#spells + 1] = spell
+        end
+    end
+    for _, spell in ipairs(spells) do
+        local text = ddt.DefaultAnnounceText(spell)
+        equal(text:find("Dyre's Debuff Tracker", 1, true), nil, spell.key)
+        equal(text:find("Tools Forever", 1, true), nil, spell.key)
+        equal(text:find(" - via ", 1, true), nil, spell.key)
+    end
+    local byKey = {}
+    for _, spell in ipairs(ddt.classData.control) do
+        byKey[spell.key] = spell
+    end
+    local fear = "Fear on >> %T <<" .. (byKey.fear.marker and " %M" or "")
+    equal(ddt.DefaultAnnounceText(byKey.fear), fear)
+    equal(ddt.DefaultAnnounceText({label = "Banish", marker = true}), "Banish on >> %T << %M", "with a marker")
+    equal(ddt.DefaultAnnounceText(byKey.howl), "Howl of Terror!")
+    for _, credit in ipairs({" - via Dyre's Debuff Tracker", " - via Warlock Tools Forever (WTF)"}) do
+        local saved = fixture({saved = {control = {texts = {fear = fear .. credit,
+            howl = "Howl of Terror!" .. credit, banish = "Banished %T, leave it" .. credit,
+            enslave = "My demon now"}}}}).ddt.db.control.texts
+        equal(saved.fear, fear, "an old default" .. credit)
+        equal(saved.howl, "Howl of Terror!", "an old default" .. credit)
+        equal(saved.banish, "Banished %T, leave it" .. credit, "a player's own text stays, credit and all")
+        equal(saved.enslave, "My demon now", "a player's own text stays")
+    end
 end)
 
 -- John, 2026-11-14: "a 'Tracker size' slider ... increasing or decreasing by up to 25%".
@@ -1490,7 +1531,7 @@ test("Tools import waits while the Tools AddOn still claims, then runs once at i
         .. "Forever"), "one line")
 end)
 
-test("WTF import: the Fear, Banish, Enslave, and Howl messages and texts come over; WTF's credit becomes DDT's", function()
+test("WTF import: the Fear, Banish, Enslave, and Howl messages and texts come over; WTF's credit is dropped", function()
     local credit = " - via Warlock Tools Forever (WTF)"
     local wtf = {announce = {enabled = true, channel = "say", fearGroup = true,
         fearGroupText = "Fearing >> %T <<. Let it run" .. credit, banishGroup = false, banishGroupText = "Moon on %T",
@@ -1498,12 +1539,12 @@ test("WTF import: the Fear, Banish, Enslave, and Howl messages and texts come ov
     local state = fixture({wtf = wtf, loaded = {WarlockToolsForever = "1.11.0"}})
     local control = state.ddt.db.control
     equal(control.announce.fear, true)
-    equal(control.texts.fear, "Fearing >> %T <<. Let it run - via Dyre's Debuff Tracker")
+    equal(control.texts.fear, "Fearing >> %T <<. Let it run", "WTF's credit dropped, no other name added")
     equal(control.announce.banish, false)
     equal(control.texts.banish, "Moon on %T", "the player's own text as written")
     equal(control.announce.enslave, true)
     equal(control.announce.howl, true)
-    contains(control.texts.howl, "Dyre's Debuff Tracker", "no WTF text: DDT's default")
+    equal(control.texts.howl, "Howl of Terror!", "no WTF text: DDT's default")
     equal(control.say, true, "WTF's Say channel")
     equal(control.summonGroup, nil, "WTF's own messages stay in WTF")
     -- WTF's master switch off silenced them all.

@@ -2,7 +2,7 @@
 ## Title: Dyre's Debuff Tracker
 ## Notes: Tracks your DoTs and crowd control for every class, and shows when your DoTs will kill
 ## Author: Dyre
-## Version: 1.8.4
+## Version: 1.8.5
 ## IconTexture: Interface\AddOns\DyresDebuffTracker\Textures\Icon
 ## Category: Buffs & Debuffs
 ## OptionalDeps: DyresToolkit, DyresSounds

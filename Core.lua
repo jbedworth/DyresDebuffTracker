@@ -270,12 +270,42 @@ local function Text(value, default)
 end
 
 -- The default group message for a crowd-control spell: its name, the mob,
--- and the marker, with the AddOn's credit.
+-- and the marker. No AddOn name (John, 2026-11-28: a WTF player uninstalled
+-- over messages that "advertised the addon every time I used certain
+-- spells"; "Yes, use them").
 function DDT.DefaultAnnounceText(spell)
     if spell.untargeted then
-        return spell.label .. "! - via Dyre's Debuff Tracker"
+        return spell.label .. "!"
     end
-    return spell.label .. " on >> %T <<" .. (spell.marker and " %M" or "") .. " - via Dyre's Debuff Tracker"
+    return spell.label .. " on >> %T <<" .. (spell.marker and " %M" or "")
+end
+
+-- The credits older defaults ended with: DDT's own before 2026-11-28, and
+-- WTF's and MTF's (their import). Dropped from an imported text; a saved text
+-- that is an old default with one of them becomes the new default.
+DDT.OLD_CREDITS = {" - via Dyre's Debuff Tracker", " - via Warlock Tools Forever (WTF)",
+    " - via Mage Tools Forever (MTF)"}
+
+function DDT.StripCredit(text)
+    if type(text) ~= "string" then
+        return text
+    end
+    for _, credit in ipairs(DDT.OLD_CREDITS) do
+        if #text > #credit and text:sub(-#credit) == credit then
+            return text:sub(1, #text - #credit)
+        end
+    end
+    return text
+end
+
+-- A saved group text: the new default when it is an old default with a
+-- credit; a player's own text as written.
+local function GroupTextOrDefault(value, default)
+    local text = Text(value, default)
+    if text ~= default and DDT.StripCredit(text) == default then
+        return default
+    end
+    return text
 end
 
 local function SanitizeSizes(theme, saved)
@@ -429,7 +459,7 @@ function DDT.SanitizeDB(db, classData)
         end
         -- Off by default: a class Tools AddOn's own messages come first.
         cleanControl.announce[spell.key] = Bool(announce[spell.key], false)
-        cleanControl.texts[spell.key] = Text(texts[spell.key], DDT.DefaultAnnounceText(spell))
+        cleanControl.texts[spell.key] = GroupTextOrDefault(texts[spell.key], DDT.DefaultAnnounceText(spell))
     end
     db.control = cleanControl
     -- The Mage's frozen and chilled arcs (Frost.lua); kept for every class, used by Mages.
@@ -478,9 +508,6 @@ end
 -- and never written.
 -- What came over, said once in chat.
 DDT.TOOLS_IMPORTED = "Copied your %s settings from %s. Change them here, under Dyre's Debuff Tracker."
--- WTF's default group texts end with its credit; DDT's say "via Dyre's Debuff Tracker".
-local WTF_CREDIT = " - via Warlock Tools Forever (WTF)"
-local DDT_CREDIT = " - via Dyre's Debuff Tracker"
 -- The keys copied, as each AddOn saves them (WTF: Core.lua SanitizeDB and
 -- Control.lua SanitizeControl; the WTF session's
 -- wtf-1.11.0-ddt-import-keys.md. MTF: Core.lua SanitizeDB, 1.5.1). Left
@@ -532,15 +559,13 @@ local function CopyKeys(from, to, keys)
     return copied
 end
 
--- A group text: WTF's credit becomes DDT's; else as written.
+-- A group text: WTF's or MTF's credit is dropped, never swapped for
+-- another AddOn's name; else as written.
 local function GroupText(text)
     if type(text) ~= "string" then
         return nil
     end
-    if text:sub(-#WTF_CREDIT) == WTF_CREDIT then
-        return text:sub(1, #text - #WTF_CREDIT) .. DDT_CREDIT
-    end
-    return text
+    return DDT.StripCredit(text)
 end
 
 local function ImportWTF(db, wtf)

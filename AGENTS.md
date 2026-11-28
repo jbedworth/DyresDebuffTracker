@@ -647,8 +647,8 @@ character knows, at its best rank; none for a spell it does not know.
     off DDT's part showed, so DDT's stay. The macros and markers always come
     (WTF owned `macros:WARLOCK` whatever its bar switch), and so do the
     Fear, Banish, Enslave, and Howl messages (`announce.<x>Group` and the
-    master `announce.enabled`) and texts (WTF's credit suffix becomes
-    DDT's), and Say (`announce.channel`). WTF's sizes set `trackerSize =
+    master `announce.enabled`) and texts (WTF's or MTF's credit suffix is
+    dropped, never swapped for DDT's: `DDT.StripCredit`), and Say (`announce.channel`). WTF's sizes set `trackerSize =
     false`. MTF (`DDT.MTF_KEYS`, MTF 1.5.1's `db.polymorph`, kept raw by
     1.6.0): the bar's enabled, position, scale, opacity, width, height (DDT
     `barHeight`), textScale while MTF's bar was on; `macro` -> `macros` and
@@ -731,6 +731,13 @@ character knows, at its best rank; none for a spell it does not know.
   every Dyre's AddOn off and no shown predicates. Removing AddShownPredicate
   did not fix it; John reported it to Blizzard.
 - Never call SetRaidTarget. Marking happens only through `/tm` in macros.
+- No AddOn name in any default message (John, 2026-11-28: a WTF player
+  uninstalled over announcements that "advertised the addon every time I used
+  certain spells"; "Yes, use them"). `DDT.DefaultAnnounceText` is
+  "<Spell> on >> %T <<" (plus " %M" with a marker), or "<Spell>!" with no
+  target. SanitizeDB turns a saved text that is an old default plus a credit
+  in `DDT.OLD_CREDITS` (DDT's, WTF's, MTF's) into the new default; a player's
+  own text stays as written. A test fails if a default names an AddOn.
 - Never RegisterEvent or UnregisterEvent COMBAT_LOG_EVENT_UNFILTERED where the
   log is restricted (WoW: Forever): both are forbidden to AddOns (John,
   2026-11-28: a profile switch on a Warlock gave "tried to call the protected

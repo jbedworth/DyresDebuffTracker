@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.8.5
+
+### Fixes
+
+- Your crowd-control messages to the group no longer end with "- via Dyre's Debuff Tracker". The default is now just the spell and the mob, like "Fear on >> %T <<". If you never changed a message, it updates on its own. If you wrote your own, it stays exactly as you wrote it.
+
 ## 1.8.4
 
 ### Fixes

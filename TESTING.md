@@ -318,8 +318,8 @@ WTF draws all three, MTF draws "control" (its Polymorph page).
       were copied. The DoTs and Crowd control pages show WTF's values; the
       tracker looks as it did. "! Fear", "! Banish", "! Seduction", and
       "! Curse" stay in the same action bar slots (one "keeps your macro"
-      line each). Fear and Banish say WTF's texts, ending "via Dyre's Debuff
-      Tracker".
+      line each). Fear and Banish say WTF's texts, with no AddOn name at the
+      end.
 - [ ] /reload: no second chat line, no second copy.
 - [ ] With WTF's DoT tracker off before the copy: DDT keeps its own DoT
       settings (WTF's off switch does not come over).
